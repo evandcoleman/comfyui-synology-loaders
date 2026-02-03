@@ -343,7 +343,13 @@ function showFolderBrowser(folderKey) {
 
         try {
             const resp = await fetch(`/synology/browse?path=${encodeURIComponent(path)}`);
-            const data = await resp.json();
+            const text = await resp.text();
+            let data;
+            try {
+                data = JSON.parse(text);
+            } catch {
+                throw new Error(`Server returned invalid response (${resp.status}): ${text.slice(0, 200) || "(empty)"}`);
+            }
 
             if (!resp.ok) {
                 errorDiv.textContent = data.error || "Failed to browse";
@@ -392,7 +398,13 @@ function showFolderBrowser(folderKey) {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ folder: folderKey, path: currentPath }),
             });
-            const data = await resp.json();
+            const text = await resp.text();
+            let data;
+            try {
+                data = JSON.parse(text);
+            } catch {
+                throw new Error(`Server returned invalid response (${resp.status})`);
+            }
 
             if (!resp.ok) {
                 errorDiv.textContent = data.error || "Failed to save";

@@ -97,6 +97,9 @@ try:
             return web.json_response({"error": str(e)}, status=401)
         except SynologyError as e:
             return web.json_response({"error": str(e)}, status=500)
+        except Exception as e:
+            logger.error(f"Browse error for path {path}: {e}")
+            return web.json_response({"error": str(e)}, status=500)
 
     @PromptServer.instance.routes.post("/synology/folder-path")
     async def synology_set_folder_path(request):
@@ -144,6 +147,9 @@ try:
         except SynologyAuthError as e:
             return web.json_response({"error": str(e)}, status=401)
         except SynologyError as e:
+            return web.json_response({"error": str(e)}, status=500)
+        except Exception as e:
+            logger.error(f"Models list error for {folder}: {e}")
             return web.json_response({"error": str(e)}, status=500)
 
 except ImportError:
