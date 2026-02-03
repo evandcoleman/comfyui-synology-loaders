@@ -19,6 +19,9 @@ const synologyState = {
 
 const trackedWidgets = new Set(); // all auth + browse widgets
 
+// Shared LoRA model list — mutated in-place so all combo widgets stay current
+const loraValues = ["None"];
+
 // ---------------------------------------------------------------------------
 // Shared UI helpers
 // ---------------------------------------------------------------------------
@@ -153,6 +156,20 @@ async function fetchFolderPaths() {
     }
 }
 
+async function refreshLoraValues() {
+    if (!synologyState.authenticated) return;
+    try {
+        const resp = await fetch("/synology/models/loras");
+        const data = await resp.json();
+        if (data.models) {
+            loraValues.length = 0;
+            loraValues.push("None", ...data.models);
+        }
+    } catch (e) {
+        console.warn("Synology: failed to refresh LoRA list", e);
+    }
+}
+
 function updateAllWidgets() {
     for (const w of trackedWidgets) {
         if (w.onSynologyStateChange) w.onSynologyStateChange();
@@ -217,6 +234,7 @@ function showLoginDialog() {
             synologyState.api_url = url;
             overlay.remove();
             await fetchFolderPaths();
+            await refreshLoraValues();
             updateAllWidgets();
             if (app.refreshComboInNodes) app.refreshComboInNodes();
         } catch (e) {
@@ -421,6 +439,7 @@ function showFolderBrowser(folderKey) {
             }
 
             synologyState.folderPaths[folderKey] = currentPath;
+            await refreshLoraValues();
             overlay.remove();
             updateAllWidgets();
             if (app.refreshComboInNodes) app.refreshComboInNodes();
@@ -448,75 +467,165 @@ function showFolderBrowser(folderKey) {
 }
 
 // ---------------------------------------------------------------------------
-// Dynamic LoRA slot visibility
+// Dynamic LoRA slot management
 // ---------------------------------------------------------------------------
 
 const LORA_SLOT_RE = /^(?:lora|strength)_(\d+)$/;
 
-function hideWidget(widget) {
-    if (widget._synHidden) return;
-    widget._synHidden = true;
-    widget._synOrigType = widget.type;
-    widget._synOrigComputeSize = widget.computeSize;
-    widget.type = "hidden";
-    widget.computeSize = () => [0, -4];
-}
+/**
+ * Rebuild the dynamic lora/strength widgets from node.properties.loraSlots.
+ * Widgets are inserted before the "Add LoRA" button so auth/browse stay last.
+ */
+function syncLoraWidgets(node) {
+    // Remove existing dynamic widgets
+    node.widgets = node.widgets.filter(w => !LORA_SLOT_RE.test(w.name));
+    node._loraSlotWidgets = [];
 
-function showWidget(widget) {
-    if (!widget._synHidden) return;
-    widget._synHidden = false;
-    widget.type = widget._synOrigType;
-    if (widget._synOrigComputeSize) {
-        widget.computeSize = widget._synOrigComputeSize;
-    } else {
-        delete widget.computeSize;
+    const slots = node.properties.loraSlots;
+
+    for (let i = 0; i < slots.length; i++) {
+        const data = slots[i];
+
+        const loraW = node.addWidget("combo", `lora_${i + 1}`, data.lora, (v) => {
+            if (node.properties.loraSlots[i]) {
+                node.properties.loraSlots[i].lora = v;
+            }
+        }, { values: loraValues });
+
+        const strW = node.addWidget("number", `strength_${i + 1}`, data.strength, (v) => {
+            if (node.properties.loraSlots[i]) {
+                node.properties.loraSlots[i].strength = v;
+            }
+        }, { min: -20.0, max: 20.0, step: 0.01, precision: 2 });
+
+        node._loraSlotWidgets.push({ lora: loraW, strength: strW });
     }
-}
 
-function updateLoraSlots(node) {
-    const countWidget = node.widgets.find(w => w.name === "lora_count");
-    if (!countWidget) return;
-    const count = countWidget.value;
-
-    for (const w of node.widgets) {
-        const m = w.name.match(LORA_SLOT_RE);
-        if (!m) continue;
-        const idx = parseInt(m[1]);
-        if (idx <= count) {
-            showWidget(w);
-        } else {
-            hideWidget(w);
-        }
+    // Move the newly appended widgets to just before the "Add LoRA" button
+    const addedCount = slots.length * 2;
+    if (addedCount > 0) {
+        const added = node.widgets.splice(node.widgets.length - addedCount, addedCount);
+        const insertIdx = node.widgets.indexOf(node._loraAddBtn);
+        node.widgets.splice(insertIdx, 0, ...added);
     }
 
     node.setSize(node.computeSize());
 }
 
+/**
+ * Determine which LoRA slot (index) was right-clicked, using widget.last_y
+ * positions set by LiteGraph during rendering.  Returns -1 if none.
+ */
+function getClickedLoraSlot(node, canvas) {
+    const nodeY = canvas.graph_mouse[1] - node.pos[1];
+    const widgetH = LiteGraph.NODE_WIDGET_HEIGHT || 20;
+
+    for (let i = 0; i < node._loraSlotWidgets.length; i++) {
+        const sw = node._loraSlotWidgets[i];
+        const loraY = sw.lora.last_y;
+        if (loraY == null) continue;
+
+        const strEnd = (sw.strength.last_y ?? loraY + widgetH) + widgetH;
+        if (nodeY >= loraY && nodeY < strEnd) {
+            return i;
+        }
+    }
+
+    return -1;
+}
+
+/**
+ * Set up dynamic LoRA slot management on a SynologyLoRALoader node.
+ *
+ * - Removes auto-created optional widgets/inputs from INPUT_TYPES
+ * - Adds an "Add LoRA" button
+ * - Right-click context menu on slots: Move Up / Move Down / Remove
+ * - Persists slot data in node.properties.loraSlots for workflow save/load
+ */
 function setupLoraSlots(node) {
-    // Remove optional input connection slots for dynamic lora/strength widgets
+    node._loraSlotWidgets = [];
+
+    // Remove auto-created optional widgets and input slots
+    node.widgets = node.widgets.filter(w => !LORA_SLOT_RE.test(w.name));
     if (node.inputs) {
         node.inputs = node.inputs.filter(input => !LORA_SLOT_RE.test(input.name));
     }
 
-    // Watch lora_count for changes
-    const countWidget = node.widgets.find(w => w.name === "lora_count");
-    if (countWidget) {
-        const origCb = countWidget.callback;
-        countWidget.callback = function (v) {
-            if (origCb) origCb.call(this, v);
-            updateLoraSlots(node);
-        };
+    // Initialize slot data
+    node.properties = node.properties || {};
+    if (!Array.isArray(node.properties.loraSlots) || node.properties.loraSlots.length === 0) {
+        node.properties.loraSlots = [{ lora: "None", strength: 1.0 }];
     }
 
-    // Re-apply visibility after workflow load restores widget values
+    // "Add LoRA" button
+    node._loraAddBtn = node.addWidget("button", "add_lora", "Add LoRA", () => {
+        node.properties.loraSlots.push({ lora: "None", strength: 1.0 });
+        syncLoraWidgets(node);
+    });
+    node._loraAddBtn.serialize = false;
+
+    // Build initial widgets
+    syncLoraWidgets(node);
+
+    // Workflow load — restore slots from properties
     const origConfigure = node.configure;
     node.configure = function (data) {
+        // Clear dynamic widgets before configure restores old widget values
+        node.widgets = node.widgets.filter(w => !LORA_SLOT_RE.test(w.name));
+        node._loraSlotWidgets = [];
+
         origConfigure?.call(this, data);
-        updateLoraSlots(node);
+
+        // Restore from properties (populated by configure from saved workflow)
+        if (!Array.isArray(node.properties?.loraSlots) || node.properties.loraSlots.length === 0) {
+            node.properties = node.properties || {};
+            node.properties.loraSlots = [{ lora: "None", strength: 1.0 }];
+        }
+
+        syncLoraWidgets(node);
     };
 
-    // Initial update
-    updateLoraSlots(node);
+    // Right-click context menu
+    const origGetExtraMenuOptions = node.getExtraMenuOptions;
+    node.getExtraMenuOptions = function (canvas, options) {
+        if (origGetExtraMenuOptions) origGetExtraMenuOptions.call(this, canvas, options);
+
+        const slotIdx = getClickedLoraSlot(node, canvas);
+        if (slotIdx < 0) return;
+
+        const menuItems = [];
+        const slots = node.properties.loraSlots;
+
+        if (slotIdx > 0) {
+            menuItems.push({
+                content: "Move LoRA Up",
+                callback: () => {
+                    [slots[slotIdx - 1], slots[slotIdx]] = [slots[slotIdx], slots[slotIdx - 1]];
+                    syncLoraWidgets(node);
+                },
+            });
+        }
+
+        if (slotIdx < slots.length - 1) {
+            menuItems.push({
+                content: "Move LoRA Down",
+                callback: () => {
+                    [slots[slotIdx], slots[slotIdx + 1]] = [slots[slotIdx + 1], slots[slotIdx]];
+                    syncLoraWidgets(node);
+                },
+            });
+        }
+
+        menuItems.push({
+            content: "Remove LoRA",
+            callback: () => {
+                slots.splice(slotIdx, 1);
+                syncLoraWidgets(node);
+            },
+        });
+
+        options.unshift(...menuItems, null);
+    };
 }
 
 // ---------------------------------------------------------------------------
@@ -530,6 +639,7 @@ app.registerExtension({
         await fetchStatus();
         if (synologyState.authenticated) {
             await fetchFolderPaths();
+            await refreshLoraValues();
         }
     },
 
@@ -538,6 +648,13 @@ app.registerExtension({
 
         const folderKey = NODE_FOLDER_MAP[nodeData.name];
         const isLoraNode = nodeData.name === "SynologyLoRALoader";
+
+        // Extract initial LoRA values from the server-provided INPUT_TYPES
+        if (isLoraNode && nodeData.input?.optional?.lora_1) {
+            loraValues.length = 0;
+            loraValues.push(...nodeData.input.optional.lora_1[0]);
+        }
+
         const origOnCreated = nodeType.prototype.onNodeCreated;
 
         nodeType.prototype.onNodeCreated = function () {

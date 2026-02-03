@@ -71,7 +71,6 @@ class SynologyLoRALoader:
             "required": {
                 "model": ("MODEL",),
                 "clip": ("CLIP",),
-                "lora_count": ("INT", {"default": 1, "min": 0, "max": MAX_LORA_SLOTS, "step": 1}),
             },
             "optional": {},
         }
@@ -86,11 +85,11 @@ class SynologyLoRALoader:
     def IS_CHANGED(cls, **kwargs):
         return get_client().auth_version
 
-    def load(self, model, clip, lora_count=1, **kwargs):
+    def load(self, model, clip, **kwargs):
         import comfy.utils
         import comfy.sd
 
-        for i in range(1, lora_count + 1):
+        for i in range(1, MAX_LORA_SLOTS + 1):
             lora_name = kwargs.get(f"lora_{i}", "None")
             strength = kwargs.get(f"strength_{i}", 1.0)
 
