@@ -226,8 +226,39 @@ class SynologyClient:
         self._model_cache.pop(folder, None)
         self._auth_version += 1
 
+    def list_shares(self):
+        """List top-level shared folders (volumes) on the NAS."""
+        def _do():
+            self._require_auth()
+            resp = requests.get(
+                f"{self._api_url}/webapi/entry.cgi",
+                params={
+                    "api": "SYNO.FileStation.List",
+                    "version": "2",
+                    "method": "list_share",
+                    "_sid": self._sid,
+                },
+                timeout=30,
+                verify=False,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            self._check_response(data)
+
+            shares = [
+                {"name": s["name"], "path": s["path"]}
+                for s in data.get("data", {}).get("shares", [])
+            ]
+            return sorted(shares, key=lambda s: s["name"])
+
+        return self._with_session_retry(_do)
+
     def list_directory(self, path):
-        """List subdirectories at the given NAS path. Returns list of {name, path} dicts."""
+        """List subdirectories at the given NAS path.
+        When path is '/', lists shared folders instead."""
+        if path == "/":
+            return self.list_shares()
+
         def _do():
             self._require_auth()
             resp = requests.get(
