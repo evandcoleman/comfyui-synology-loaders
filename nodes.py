@@ -53,7 +53,7 @@ class SynologyCheckpointLoader:
 # LoRA Loader
 # ---------------------------------------------------------------------------
 
-LORA_SLOT_COUNT = 3
+MAX_LORA_SLOTS = 20
 
 class SynologyLoRALoader:
     RETURN_TYPES = ("MODEL", "CLIP")
@@ -71,11 +71,13 @@ class SynologyLoRALoader:
             "required": {
                 "model": ("MODEL",),
                 "clip": ("CLIP",),
-            }
+                "lora_count": ("INT", {"default": 1, "min": 0, "max": MAX_LORA_SLOTS, "step": 1}),
+            },
+            "optional": {},
         }
-        for i in range(1, LORA_SLOT_COUNT + 1):
-            inputs["required"][f"lora_{i}"] = (lora_list,)
-            inputs["required"][f"strength_{i}"] = ("FLOAT", {
+        for i in range(1, MAX_LORA_SLOTS + 1):
+            inputs["optional"][f"lora_{i}"] = (lora_list,)
+            inputs["optional"][f"strength_{i}"] = ("FLOAT", {
                 "default": 1.0, "min": -20.0, "max": 20.0, "step": 0.01,
             })
         return inputs
@@ -84,11 +86,11 @@ class SynologyLoRALoader:
     def IS_CHANGED(cls, **kwargs):
         return get_client().auth_version
 
-    def load(self, model, clip, **kwargs):
+    def load(self, model, clip, lora_count=1, **kwargs):
         import comfy.utils
         import comfy.sd
 
-        for i in range(1, LORA_SLOT_COUNT + 1):
+        for i in range(1, lora_count + 1):
             lora_name = kwargs.get(f"lora_{i}", "None")
             strength = kwargs.get(f"strength_{i}", 1.0)
 

@@ -448,6 +448,78 @@ function showFolderBrowser(folderKey) {
 }
 
 // ---------------------------------------------------------------------------
+// Dynamic LoRA slot visibility
+// ---------------------------------------------------------------------------
+
+const LORA_SLOT_RE = /^(?:lora|strength)_(\d+)$/;
+
+function hideWidget(widget) {
+    if (widget._synHidden) return;
+    widget._synHidden = true;
+    widget._synOrigType = widget.type;
+    widget._synOrigComputeSize = widget.computeSize;
+    widget.type = "hidden";
+    widget.computeSize = () => [0, -4];
+}
+
+function showWidget(widget) {
+    if (!widget._synHidden) return;
+    widget._synHidden = false;
+    widget.type = widget._synOrigType;
+    if (widget._synOrigComputeSize) {
+        widget.computeSize = widget._synOrigComputeSize;
+    } else {
+        delete widget.computeSize;
+    }
+}
+
+function updateLoraSlots(node) {
+    const countWidget = node.widgets.find(w => w.name === "lora_count");
+    if (!countWidget) return;
+    const count = countWidget.value;
+
+    for (const w of node.widgets) {
+        const m = w.name.match(LORA_SLOT_RE);
+        if (!m) continue;
+        const idx = parseInt(m[1]);
+        if (idx <= count) {
+            showWidget(w);
+        } else {
+            hideWidget(w);
+        }
+    }
+
+    node.setSize(node.computeSize());
+}
+
+function setupLoraSlots(node) {
+    // Remove optional input connection slots for dynamic lora/strength widgets
+    if (node.inputs) {
+        node.inputs = node.inputs.filter(input => !LORA_SLOT_RE.test(input.name));
+    }
+
+    // Watch lora_count for changes
+    const countWidget = node.widgets.find(w => w.name === "lora_count");
+    if (countWidget) {
+        const origCb = countWidget.callback;
+        countWidget.callback = function (v) {
+            if (origCb) origCb.call(this, v);
+            updateLoraSlots(node);
+        };
+    }
+
+    // Re-apply visibility after workflow load restores widget values
+    const origConfigure = node.configure;
+    node.configure = function (data) {
+        origConfigure?.call(this, data);
+        updateLoraSlots(node);
+    };
+
+    // Initial update
+    updateLoraSlots(node);
+}
+
+// ---------------------------------------------------------------------------
 // Extension registration
 // ---------------------------------------------------------------------------
 
@@ -465,12 +537,18 @@ app.registerExtension({
         if (!SYNOLOGY_NODE_TYPES.includes(nodeData.name)) return;
 
         const folderKey = NODE_FOLDER_MAP[nodeData.name];
+        const isLoraNode = nodeData.name === "SynologyLoRALoader";
         const origOnCreated = nodeType.prototype.onNodeCreated;
 
         nodeType.prototype.onNodeCreated = function () {
             if (origOnCreated) origOnCreated.apply(this, arguments);
 
             const node = this;
+
+            // --- Dynamic LoRA slot management ---
+            if (isLoraNode) {
+                setupLoraSlots(node);
+            }
 
             // --- Auth button ---
             const authWidget = node.addWidget("button", "synology_auth", null, () => {
