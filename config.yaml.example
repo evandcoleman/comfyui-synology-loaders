@@ -14,8 +14,17 @@ username: ""
 password: ""
 
 # Base path on the NAS where models are stored
-# Expected subdirectories: checkpoints/, loras/, vae/, controlnet/
+# Used as the default root when a folder doesn't have a custom path below
 models_base_path: "/volume1/models"
+
+# Custom NAS paths per model type (optional)
+# If set, these override models_base_path for that type.
+# If not set, defaults to models_base_path/<folder> (e.g. /volume1/models/loras)
+folder_paths:
+  checkpoints: ""
+  loras: ""
+  vae: ""
+  controlnet: ""
 
 # Local cache directory for downloaded models
 # Defaults to ComfyUI's models directory + "synology_cache" if not set

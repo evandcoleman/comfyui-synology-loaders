@@ -39,6 +39,7 @@ def load_config():
         "username": "",
         "password": "",
         "models_base_path": "/volume1/models",
+        "folder_paths": {},
         "cache_dir": "",
     }
     path = _config_path()
@@ -87,6 +88,7 @@ class SynologyClient:
         self._username = None
         self._password = None
         self._models_base_path = "/volume1/models"
+        self._folder_paths = {}  # folder -> custom NAS path
         self._cache_dir = cache_dir or _default_cache_dir()
         self._model_cache = {}  # folder -> [filenames]
         self._auth_version = 0
@@ -193,6 +195,13 @@ class SynologyClient:
 
     # -- API calls ----------------------------------------------------------
 
+    def _resolve_folder_path(self, folder):
+        """Return the full NAS path for a folder, using custom path if configured."""
+        custom = self._folder_paths.get(folder)
+        if custom:
+            return custom.rstrip("/")
+        return f"{self._models_base_path}/{folder}"
+
     def _require_auth(self):
         if not self._sid:
             raise SynologyAuthError("Not authenticated — please log in first")
@@ -211,7 +220,7 @@ class SynologyClient:
 
         def _do():
             self._require_auth()
-            path = f"{self._models_base_path}/{folder}"
+            path = self._resolve_folder_path(folder)
             resp = requests.get(
                 f"{self._api_url}/webapi/entry.cgi",
                 params={
@@ -250,7 +259,7 @@ class SynologyClient:
 
         def _do():
             self._require_auth()
-            remote_path = f"{self._models_base_path}/{folder}/{filename}"
+            remote_path = f"{self._resolve_folder_path(folder)}/{filename}"
             resp = requests.get(
                 f"{self._api_url}/webapi/entry.cgi",
                 params={
@@ -309,6 +318,9 @@ def get_client():
                 cache_dir = config.get("cache_dir") or _default_cache_dir()
                 _client = SynologyClient(cache_dir=cache_dir)
                 _client._models_base_path = config.get("models_base_path", "/volume1/models")
+                folder_paths = config.get("folder_paths", {})
+                if folder_paths:
+                    _client._folder_paths = {k: v for k, v in folder_paths.items() if v}
 
                 # Auto-login if credentials are available from config/env
                 api_url = config.get("api_url")
