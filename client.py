@@ -213,6 +213,48 @@ class SynologyClient:
                 raise SessionExpiredError("Session expired")
             raise SynologyAPIError(f"API error (code: {code})", code=code)
 
+    def get_folder_path(self, folder):
+        """Return the current NAS path for a folder type."""
+        return self._resolve_folder_path(folder)
+
+    def set_folder_path(self, folder, path):
+        """Set a custom NAS path for a folder type. Clears cached models for that folder."""
+        if path:
+            self._folder_paths[folder] = path.rstrip("/")
+        else:
+            self._folder_paths.pop(folder, None)
+        self._model_cache.pop(folder, None)
+        self._auth_version += 1
+
+    def list_directory(self, path):
+        """List subdirectories at the given NAS path. Returns list of {name, path} dicts."""
+        def _do():
+            self._require_auth()
+            resp = requests.get(
+                f"{self._api_url}/webapi/entry.cgi",
+                params={
+                    "api": "SYNO.FileStation.List",
+                    "version": "2",
+                    "method": "list",
+                    "folder_path": path,
+                    "_sid": self._sid,
+                },
+                timeout=30,
+                verify=False,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            self._check_response(data)
+
+            dirs = [
+                {"name": f["name"], "path": f["path"]}
+                for f in data.get("data", {}).get("files", [])
+                if f.get("isdir", False)
+            ]
+            return sorted(dirs, key=lambda d: d["name"])
+
+        return self._with_session_retry(_do)
+
     def list_models(self, folder):
         """List model files in a NAS folder. Returns cached results if available."""
         if folder in self._model_cache:

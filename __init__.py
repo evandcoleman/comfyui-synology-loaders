@@ -85,6 +85,48 @@ try:
         await loop.run_in_executor(None, client.logout)
         return web.json_response({"authenticated": False})
 
+    @PromptServer.instance.routes.get("/synology/browse")
+    async def synology_browse(request):
+        path = request.query.get("path", "/")
+        loop = asyncio.get_event_loop()
+        try:
+            client = await loop.run_in_executor(None, get_client)
+            dirs = await loop.run_in_executor(None, client.list_directory, path)
+            return web.json_response({"path": path, "directories": dirs})
+        except SynologyAuthError as e:
+            return web.json_response({"error": str(e)}, status=401)
+        except SynologyError as e:
+            return web.json_response({"error": str(e)}, status=500)
+
+    @PromptServer.instance.routes.post("/synology/folder-path")
+    async def synology_set_folder_path(request):
+        data = await request.json()
+        folder = data.get("folder", "")
+        path = data.get("path", "")
+
+        if folder not in ALLOWED_FOLDERS:
+            return web.json_response(
+                {"error": f"Invalid folder. Allowed: {', '.join(sorted(ALLOWED_FOLDERS))}"},
+                status=400,
+            )
+        if not path:
+            return web.json_response({"error": "path is required"}, status=400)
+
+        loop = asyncio.get_event_loop()
+        client = await loop.run_in_executor(None, get_client)
+        await loop.run_in_executor(None, client.set_folder_path, folder, path)
+        return web.json_response({
+            "folder": folder,
+            "path": client.get_folder_path(folder),
+        })
+
+    @PromptServer.instance.routes.get("/synology/folder-paths")
+    async def synology_get_folder_paths(request):
+        loop = asyncio.get_event_loop()
+        client = await loop.run_in_executor(None, get_client)
+        paths = {f: client.get_folder_path(f) for f in sorted(ALLOWED_FOLDERS)}
+        return web.json_response(paths)
+
     @PromptServer.instance.routes.get("/synology/models/{folder}")
     async def synology_models(request):
         folder = request.match_info["folder"]
