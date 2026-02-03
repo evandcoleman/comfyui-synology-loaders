@@ -1,0 +1,22 @@
+# Synology NAS Configuration for ComfyUI
+#
+# Copy this file to config.yaml and fill in your values.
+# Environment variables take priority over values in this file:
+#   SYNOLOGY_API_URL      - e.g. https://your-nas:5001
+#   SYNOLOGY_USERNAME     - NAS login username
+#   SYNOLOGY_PASSWORD     - NAS login password
+
+# Synology NAS API URL (include port, e.g. https://192.168.1.100:5001)
+api_url: ""
+
+# NAS credentials
+username: ""
+password: ""
+
+# Base path on the NAS where models are stored
+# Expected subdirectories: checkpoints/, loras/, vae/, controlnet/
+models_base_path: "/volume1/models"
+
+# Local cache directory for downloaded models
+# Defaults to ComfyUI's models directory + "synology_cache" if not set
+cache_dir: ""
