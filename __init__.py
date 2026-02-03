@@ -25,7 +25,7 @@ NODE_CLASS_MAPPINGS = {
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     "SynologyCheckpointLoader": "Load Checkpoint (Synology)",
-    "SynologyLoRALoader": "Load LoRA (Synology)",
+    "SynologyLoRALoader": "Load LoRA x3 (Synology)",
     "SynologyVAELoader": "Load VAE (Synology)",
     "SynologyControlNetLoader": "Load ControlNet (Synology)",
 }
