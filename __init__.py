@@ -67,7 +67,7 @@ try:
         loop = asyncio.get_event_loop()
         try:
             client = await loop.run_in_executor(None, get_client)
-            await loop.run_in_executor(None, client.login, username, password, api_url)
+            await loop.run_in_executor(None, lambda: client.login(username, password, api_url, persist=True))
             return web.json_response({
                 "authenticated": True,
                 "user": client.username,

@@ -65,6 +65,17 @@ def load_config():
 
     return config
 
+
+def save_config(config):
+    """Write config dict back to config.yaml."""
+    path = _config_path()
+    try:
+        with open(path, "w") as f:
+            yaml.safe_dump(config, f, default_flow_style=False, sort_keys=False)
+        logger.info(f"Saved config to {path}")
+    except Exception as e:
+        logger.warning(f"Failed to save config.yaml: {e}")
+
 # ---------------------------------------------------------------------------
 # Cache directory
 # ---------------------------------------------------------------------------
@@ -111,9 +122,20 @@ class SynologyClient:
     def api_url(self):
         return self._api_url
 
+    # -- config persistence -------------------------------------------------
+
+    def _persist_config(self):
+        """Save current credentials and folder paths to config.yaml."""
+        config = load_config()
+        config["api_url"] = self._api_url or ""
+        config["username"] = self._username or ""
+        config["password"] = self._password or ""
+        config["folder_paths"] = dict(self._folder_paths)
+        save_config(config)
+
     # -- auth ---------------------------------------------------------------
 
-    def login(self, username, password, api_url=None):
+    def login(self, username, password, api_url=None, persist=False):
         with self._lock:
             if api_url:
                 self._api_url = api_url.rstrip("/")
@@ -124,6 +146,9 @@ class SynologyClient:
             self._password = password
 
             self._do_login()
+
+            if persist:
+                self._persist_config()
 
     def _do_login(self):
         """Internal login — caller must hold self._lock."""
@@ -176,6 +201,7 @@ class SynologyClient:
             self._password = None
             self._model_cache.clear()
             self._auth_version += 1
+            self._persist_config()
             logger.info("Logged out of Synology")
 
     # -- session retry wrapper ----------------------------------------------
@@ -214,8 +240,8 @@ class SynologyClient:
             raise SynologyAPIError(f"API error (code: {code})", code=code)
 
     def get_folder_path(self, folder):
-        """Return the current NAS path for a folder type."""
-        return self._resolve_folder_path(folder)
+        """Return the custom NAS path for a folder type, or empty string if not set."""
+        return self._folder_paths.get(folder, "")
 
     def set_folder_path(self, folder, path):
         """Set a custom NAS path for a folder type. Clears cached models for that folder."""
@@ -225,6 +251,7 @@ class SynologyClient:
             self._folder_paths.pop(folder, None)
         self._model_cache.pop(folder, None)
         self._auth_version += 1
+        self._persist_config()
 
     def list_shares(self):
         """List top-level shared folders (volumes) on the NAS."""

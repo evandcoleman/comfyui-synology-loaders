@@ -270,7 +270,9 @@ function showFolderBrowser(folderKey) {
     const dialog = makeDialogBox("500px");
     const errorDiv = makeErrorDiv();
 
-    const startPath = synologyState.folderPaths[folderKey] || "/";
+    // Start at the custom path if set, otherwise at root (lists shares)
+    const customPath = synologyState.folderPaths[folderKey];
+    const startPath = customPath || "/";
 
     // Current path display
     const pathBar = document.createElement("div");
@@ -334,7 +336,7 @@ function showFolderBrowser(folderKey) {
         return row;
     }
 
-    async function navigateTo(path) {
+    async function navigateTo(path, isRetry = false) {
         listContainer.innerHTML = "";
         errorDiv.style.display = "none";
         statusLine.textContent = "Loading...";
@@ -352,6 +354,10 @@ function showFolderBrowser(folderKey) {
             }
 
             if (!resp.ok) {
+                // If path doesn't exist and we haven't retried, fall back to root
+                if (!isRetry && path !== "/") {
+                    return navigateTo("/", true);
+                }
                 errorDiv.textContent = data.error || "Failed to browse";
                 errorDiv.style.display = "block";
                 statusLine.textContent = "";
