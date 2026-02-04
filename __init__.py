@@ -136,6 +136,13 @@ try:
         paths = {f: client.get_folder_path(f) for f in sorted(ALLOWED_FOLDERS)}
         return web.json_response(paths)
 
+    @PromptServer.instance.routes.post("/synology/refresh-models")
+    async def synology_refresh_models(request):
+        loop = asyncio.get_event_loop()
+        client = await loop.run_in_executor(None, get_client)
+        await loop.run_in_executor(None, client.refresh_models)
+        return web.json_response({"ok": True})
+
     @PromptServer.instance.routes.get("/synology/models/{folder}")
     async def synology_models(request):
         folder = request.match_info["folder"]

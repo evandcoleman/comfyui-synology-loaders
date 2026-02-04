@@ -126,6 +126,12 @@ class SynologyClient:
     def cache_dir(self):
         return self._cache_dir
 
+    def refresh_models(self):
+        """Clear the in-memory model list cache so the next list_models call re-fetches."""
+        self._model_cache.clear()
+        self._auth_version += 1
+        logger.info("Refreshed model list cache")
+
     def clear_cache(self):
         """Delete all cached model files and return the number of bytes freed."""
         import shutil

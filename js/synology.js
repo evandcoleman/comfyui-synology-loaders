@@ -1277,6 +1277,23 @@ app.registerExtension({
             browseWidget.onSynologyStateChange();
             trackedWidgets.add(browseWidget);
 
+            // --- Refresh models button ---
+            const refreshWidget = node.addWidget("button", "synology_refresh", "Refresh Models", async () => {
+                if (!synologyState.authenticated) return;
+                refreshWidget.name = "Refreshing...";
+                node.setDirtyCanvas(true);
+                try {
+                    await fetch("/synology/refresh-models", { method: "POST" });
+                    await refreshLoraValues();
+                    if (app.refreshComboInNodes) app.refreshComboInNodes();
+                } catch (e) {
+                    console.warn("Synology: refresh failed", e);
+                }
+                refreshWidget.name = "Refresh Models";
+                node.setDirtyCanvas(true);
+            });
+            refreshWidget.serialize = false;
+
             // --- Cleanup ---
             const origOnRemoved = node.onRemoved;
             node.onRemoved = function () {
