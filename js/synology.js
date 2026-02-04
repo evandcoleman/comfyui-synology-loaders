@@ -710,32 +710,23 @@ function syncLoraWidgets(node) {
     const slots = node.properties.loraSlots;
     let addedCount = 0;
 
-    // --- Toggle All (created as a real widget so LiteGraph routes mouse events) ---
+    // --- Toggle All (button widget — LiteGraph calls the callback on click) ---
     if (slots.length > 0) {
-        const toggleAllW = node.addWidget("button", "toggle_all", "Toggle All", () => {});
-        toggleAllW.serialize = false;
-
-        toggleAllW.draw = function (ctx, _node, width, y, H) {
-            this.last_y = y;
-            drawToggleAll(ctx, _node, width, y, H, slots);
-        };
-
-        toggleAllW.mouse = function (event, pos) {
-            if (event.type === "mousedown") return true;
-            if (event.type !== "mouseup") return false;
+        const toggleAllW = node.addWidget("button", "toggle_all", "Toggle All", () => {
             const allEnabled = slots.every(s => s.enabled !== false);
             const newState = !allEnabled;
             for (let j = 0; j < slots.length; j++) {
                 slots[j].enabled = newState;
                 const sw = node._loraSlotWidgets[j];
-                if (sw) {
-                    sw.lora._programmatic = true;
-                    sw.lora.value = newState ? slots[j].lora : "None";
-                    sw.lora._programmatic = false;
-                }
+                if (sw) sw.lora.value = newState ? slots[j].lora : "None";
             }
             node.setDirtyCanvas(true);
-            return true;
+        });
+        toggleAllW.serialize = false;
+
+        toggleAllW.draw = function (ctx, _node, width, y, H) {
+            this.last_y = y;
+            drawToggleAll(ctx, _node, width, y, H, slots);
         };
 
         addedCount++;
@@ -746,19 +737,14 @@ function syncLoraWidgets(node) {
         const data = slots[i];
         if (data.enabled === undefined) data.enabled = true;
 
-        // Combo widget — custom-drawn as a single-line slot
-        // _programmatic guard prevents the callback from overwriting data.lora
-        // when we programmatically set the value during toggle on/off
+        // Combo widget — custom-drawn as a single-line slot.
+        // No callback: all value changes go through our custom UI handlers
+        // (showLoraDropdown, toggle click). This prevents any LiteGraph-triggered
+        // callback from overwriting data.lora when we set value="None" for disabled slots.
         const loraW = node.addWidget(
             "combo", `lora_${i + 1}`,
             data.enabled ? data.lora : "None",
-            (v) => {
-                if (loraW._programmatic) return;
-                if (node.properties.loraSlots[i]) {
-                    node.properties.loraSlots[i].lora = v;
-                    node.properties.loraSlots[i].enabled = v !== "None";
-                }
-            },
+            null,
             { values: loraValues },
         );
 
@@ -786,12 +772,10 @@ function syncLoraWidgets(node) {
             const x = pos[0];
             const z = loraZones(node.size[0]);
 
-            // toggle — use guard to prevent callback from overwriting data.lora
+            // toggle switch
             if (x < z.toggle.x + z.toggle.w) {
                 data.enabled = !data.enabled;
-                loraW._programmatic = true;
                 loraW.value = data.enabled ? data.lora : "None";
-                loraW._programmatic = false;
                 node.setDirtyCanvas(true);
                 return true;
             }
