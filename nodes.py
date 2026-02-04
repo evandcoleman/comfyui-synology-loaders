@@ -109,28 +109,36 @@ class SynologyLoRALoader:
 
             value = kwargs[key]
 
-            # Accept structured {on, lora, strength} dicts from the frontend
+            # Accept structured {on, lora, strength, strengthTwo} dicts from the frontend
             if isinstance(value, dict):
                 on = value.get("on", True)
                 lora_name = value.get("lora", "None")
-                strength = value.get("strength", 1.0)
+                strength_model = value.get("strength", 1.0)
+                strength_clip = value.get("strengthTwo") if value.get("strengthTwo") is not None else strength_model
             else:
                 # Fallback for plain string values
                 on = True
                 lora_name = str(value)
-                strength = 1.0
+                strength_model = 1.0
+                strength_clip = 1.0
 
             if not on or lora_name == "None":
                 continue
+            if clip is None:
+                strength_clip = 0
 
             if lora_name not in self.loaded_loras:
                 client = get_client()
-                local_path = client.download_model("loras", lora_name)
+                pbar = comfy.utils.ProgressBar(100)
+                def on_progress(downloaded, total):
+                    pbar.update_absolute(int(downloaded * 100 / total), 100)
+                local_path = client.download_model("loras", lora_name, progress_callback=on_progress)
                 self.loaded_loras[lora_name] = comfy.utils.load_torch_file(local_path, safe_load=True)
 
-            model, clip = comfy.sd.load_lora_for_models(
-                model, clip, self.loaded_loras[lora_name], strength, strength,
-            )
+            if strength_model != 0 or strength_clip != 0:
+                model, clip = comfy.sd.load_lora_for_models(
+                    model, clip, self.loaded_loras[lora_name], strength_model, strength_clip,
+                )
 
         return (model, clip)
 
