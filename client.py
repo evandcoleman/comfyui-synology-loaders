@@ -313,36 +313,54 @@ class SynologyClient:
 
         return self._with_session_retry(_do)
 
+    def _list_folder(self, path):
+        """List all entries (files and dirs) at a NAS path."""
+        self._require_auth()
+        resp = requests.get(
+            f"{self._api_url}/webapi/entry.cgi",
+            params={
+                "api": "SYNO.FileStation.List",
+                "version": "2",
+                "method": "list",
+                "folder_path": path,
+                "_sid": self._sid,
+            },
+            timeout=30,
+            verify=False,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        self._check_response(data)
+        return data.get("data", {}).get("files", [])
+
     def list_models(self, folder):
-        """List model files in a NAS folder. Returns cached results if available."""
+        """List model files in a NAS folder, recursing into subdirectories.
+        Returns paths relative to the folder root (e.g. 'subdir/model.safetensors').
+        Results are cached."""
         if folder in self._model_cache:
             return self._model_cache[folder]
 
         def _do():
-            self._require_auth()
-            path = self._resolve_folder_path(folder)
-            resp = requests.get(
-                f"{self._api_url}/webapi/entry.cgi",
-                params={
-                    "api": "SYNO.FileStation.List",
-                    "version": "2",
-                    "method": "list",
-                    "folder_path": path,
-                    "_sid": self._sid,
-                },
-                timeout=30,
-                verify=False,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            self._check_response(data)
+            base_path = self._resolve_folder_path(folder)
+            results = []
+            stack = [base_path]
 
-            files = [
-                f["name"]
-                for f in data.get("data", {}).get("files", [])
-                if not f.get("isdir", False)
-            ]
-            self._model_cache[folder] = sorted(files)
+            while stack:
+                current = stack.pop()
+                entries = self._list_folder(current)
+                for entry in entries:
+                    if entry.get("isdir", False):
+                        stack.append(entry["path"])
+                    else:
+                        # Build path relative to the base folder
+                        full = entry["path"]
+                        if full.startswith(base_path + "/"):
+                            relative = full[len(base_path) + 1:]
+                        else:
+                            relative = entry["name"]
+                        results.append(relative)
+
+            self._model_cache[folder] = sorted(results)
             return self._model_cache[folder]
 
         return self._with_session_retry(_do)
@@ -383,7 +401,7 @@ class SynologyClient:
                 self._check_response(data)
                 raise SynologyAPIError("Download returned unexpected JSON response")
 
-            os.makedirs(cache_folder, exist_ok=True)
+            os.makedirs(os.path.dirname(local_path), exist_ok=True)
             tmp_path = local_path + ".tmp"
             try:
                 with open(tmp_path, "wb") as f:
