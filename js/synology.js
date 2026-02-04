@@ -516,10 +516,38 @@ const SWITCH_H = 12;
 const SWITCH_PAD = 4;
 const ARROW_W = 14;
 const STRENGTH_NUM_W = 36;
+const STRENGTH_COL_W = ARROW_W + STRENGTH_NUM_W + ARROW_W; // one full strength column
 
-function loraZones(width) {
+function loraZones(width, dual) {
     const switchX = MARGIN + SWITCH_PAD;
     const nameX = switchX + SWITCH_W + 8;
+
+    if (dual) {
+        // Two strength columns: | < model > | < clip > |
+        const col2End = width - MARGIN;
+        const col2ArrowRight = col2End - ARROW_W;
+        const col2Num = col2ArrowRight - STRENGTH_NUM_W;
+        const col2ArrowLeft = col2Num - ARROW_W;
+
+        const col1End = col2ArrowLeft - 2; // small gap between columns
+        const col1ArrowRight = col1End - ARROW_W;
+        const col1Num = col1ArrowRight - STRENGTH_NUM_W;
+        const col1ArrowLeft = col1Num - ARROW_W;
+
+        const nameEnd = col1ArrowLeft - 4;
+        return {
+            toggle:       { x: MARGIN, w: nameX - MARGIN },
+            name:         { x: nameX,  w: nameEnd - nameX },
+            arrowLeft:    { x: col1ArrowLeft, w: ARROW_W },
+            strengthNum:  { x: col1Num, w: STRENGTH_NUM_W },
+            arrowRight:   { x: col1ArrowRight, w: ARROW_W },
+            arrowLeft2:   { x: col2ArrowLeft, w: ARROW_W },
+            strengthNum2: { x: col2Num, w: STRENGTH_NUM_W },
+            arrowRight2:  { x: col2ArrowRight, w: ARROW_W },
+        };
+    }
+
+    // Single mode — same as before
     const arrowRightEnd = width - MARGIN;
     const arrowRightX = arrowRightEnd - ARROW_W;
     const numEnd = arrowRightX;
@@ -538,24 +566,65 @@ function loraZones(width) {
 
 // -- Interaction helpers ---------------------------------------------------
 
-function showLoraDropdown(event, widget, node) {
-    const values = loraValues.map(v => ({
-        content: v === "None" ? "None" : v.replace(/\.[^.]+$/, ""),
-        callback: () => {
-            widget.value = { ...widget.value, lora: v, on: v !== "None" };
-            node.setDirtyCanvas(true);
+function isDualMode(node) {
+    return node.properties?.showStrengths === "Model & Clip";
+}
+
+function buildGroupedLoraMenu(values, onSelect) {
+    // Group LoRA values by folder path into nested submenus
+    const rootItems = [];
+    const folders = {};
+
+    for (const v of values) {
+        if (v === "None") {
+            rootItems.push({ content: "None", callback: () => onSelect(v) });
+            continue;
         }
-    }));
-    new LiteGraph.ContextMenu(values, {
+        const parts = v.split("/");
+        if (parts.length === 1) {
+            rootItems.push({
+                content: v.replace(/\.[^.]+$/, ""),
+                callback: () => onSelect(v),
+            });
+        } else {
+            const folder = parts.slice(0, -1).join("/");
+            if (!folders[folder]) folders[folder] = [];
+            folders[folder].push(v);
+        }
+    }
+
+    // Build nested folder submenus
+    const folderNames = Object.keys(folders).sort();
+    for (const folder of folderNames) {
+        const submenu = folders[folder].map(v => ({
+            content: v.split("/").pop().replace(/\.[^.]+$/, ""),
+            callback: () => onSelect(v),
+        }));
+        rootItems.push({
+            content: folder,
+            has_submenu: true,
+            submenu: { options: submenu },
+        });
+    }
+
+    return rootItems;
+}
+
+function showLoraDropdown(event, widget, node) {
+    const items = buildGroupedLoraMenu(loraValues, (v) => {
+        widget.value = { ...widget.value, lora: v, on: v !== "None" };
+        node.setDirtyCanvas(true);
+    });
+    new LiteGraph.ContextMenu(items, {
         event: event,
         scale: app.canvas.ds?.scale || 1,
     });
 }
 
-function showStrengthInput(event, widget, node) {
+function showStrengthInput(event, widget, node, key = "strength") {
     const input = document.createElement("input");
     input.type = "number";
-    input.value = widget.value.strength.toFixed(2);
+    input.value = (widget.value[key] ?? widget.value.strength).toFixed(2);
     input.step = "0.05";
     input.min = "-20";
     input.max = "20";
@@ -578,7 +647,7 @@ function showStrengthInput(event, widget, node) {
     function apply() {
         const v = parseFloat(input.value);
         if (!isNaN(v)) {
-            widget.value = { ...widget.value, strength: Math.max(-20, Math.min(20, v)) };
+            widget.value = { ...widget.value, [key]: Math.max(-20, Math.min(20, v)) };
         }
         input.remove();
         node.setDirtyCanvas(true);
@@ -602,7 +671,7 @@ function getLoraWidgets(node) {
 }
 
 function createLoraWidget(node, index, initialValue) {
-    const val = initialValue || { on: true, lora: "None", strength: 1.0 };
+    const val = initialValue || { on: true, lora: "None", strength: 1.0, strengthTwo: null };
     // Create as combo (for addWidget initialization), then change type to prevent
     // LiteGraph's combo-specific processing from resetting our object value
     const w = node.addWidget("combo", `lora_${index}`, "None", null, { values: loraValues });
@@ -611,10 +680,13 @@ function createLoraWidget(node, index, initialValue) {
     w.options.values = undefined; // prevent LiteGraph combo picker on dblclick
     w._isLoraSlot = true;
     w._lastStrengthClick = 0;
+    w._lastStrengthClick2 = 0;
+    w._dragState = null; // { key, startX, startVal }
 
     w.draw = function (ctx, _node, width, y, H) {
         this.last_y = y;
-        const z = loraZones(width);
+        const dual = isDualMode(node);
+        const z = loraZones(width, dual);
         const switchX = MARGIN + SWITCH_PAD;
         const switchY = y + (H - SWITCH_H) / 2;
         const v = this.value;
@@ -633,49 +705,106 @@ function createLoraWidget(node, index, initialValue) {
         const savedAlpha = ctx.globalAlpha;
         if (!on) ctx.globalAlpha = 0.4;
 
-        // LoRA name
-        const rawName = v.lora === "None" ? "None" : v.lora.replace(/\.[^.]+$/, "");
+        // LoRA name — strip folder prefix, show just filename without extension
+        const rawName = v.lora === "None" ? "None" : v.lora.split("/").pop().replace(/\.[^.]+$/, "");
         ctx.fillStyle = on ? (LiteGraph.WIDGET_TEXT_COLOR || "#ddd") : "#666";
         ctx.font = "12px sans-serif";
         ctx.textAlign = "left";
         ctx.textBaseline = "middle";
         ctx.fillText(truncateText(ctx, rawName, z.name.w), z.name.x, y + H / 2);
 
-        // left arrow
-        ctx.fillStyle = LiteGraph.WIDGET_SECONDARY_TEXT_COLOR || "#999";
+        // Strength column 1 (model strength, or the only strength in single mode)
+        const secColor = LiteGraph.WIDGET_SECONDARY_TEXT_COLOR || "#999";
+        ctx.fillStyle = secColor;
         ctx.font = "11px sans-serif";
         ctx.textAlign = "center";
         ctx.fillText("\u25C0", z.arrowLeft.x + z.arrowLeft.w / 2, y + H / 2);
 
-        // strength value
-        ctx.fillStyle = on ? (LiteGraph.WIDGET_SECONDARY_TEXT_COLOR || "#999") : "#555";
+        ctx.fillStyle = on ? secColor : "#555";
         ctx.font = "11px monospace";
         ctx.textAlign = "center";
         ctx.fillText(v.strength.toFixed(2), z.strengthNum.x + z.strengthNum.w / 2, y + H / 2);
 
-        // right arrow
-        ctx.fillStyle = LiteGraph.WIDGET_SECONDARY_TEXT_COLOR || "#999";
+        ctx.fillStyle = secColor;
         ctx.font = "11px sans-serif";
         ctx.textAlign = "center";
         ctx.fillText("\u25B6", z.arrowRight.x + z.arrowRight.w / 2, y + H / 2);
+
+        // Strength column 2 (clip strength, dual mode only)
+        if (dual && z.arrowLeft2) {
+            const s2 = v.strengthTwo ?? v.strength;
+            ctx.fillStyle = secColor;
+            ctx.font = "11px sans-serif";
+            ctx.textAlign = "center";
+            ctx.fillText("\u25C0", z.arrowLeft2.x + z.arrowLeft2.w / 2, y + H / 2);
+
+            ctx.fillStyle = on ? secColor : "#555";
+            ctx.font = "11px monospace";
+            ctx.textAlign = "center";
+            ctx.fillText(s2.toFixed(2), z.strengthNum2.x + z.strengthNum2.w / 2, y + H / 2);
+
+            ctx.fillStyle = secColor;
+            ctx.font = "11px sans-serif";
+            ctx.textAlign = "center";
+            ctx.fillText("\u25B6", z.arrowRight2.x + z.arrowRight2.w / 2, y + H / 2);
+        }
 
         ctx.globalAlpha = savedAlpha;
     };
 
     w.mouse = function (event, pos) {
         const t = event.type;
-        if (t === "pointerdown" || t === "mousedown") return true;
-        const isDblClick = t === "dblclick";
+        const dual = isDualMode(node);
+        const z = loraZones(node.size[0], dual);
+        const x = pos[0];
+
+        // --- Drag-to-change strength ---
+        if (t === "pointerdown" || t === "mousedown") {
+            // Check if pointer is on a strength number zone
+            if (x >= z.strengthNum.x && x < z.strengthNum.x + z.strengthNum.w) {
+                this._dragState = { key: "strength", startX: event.canvasX ?? event.clientX, startVal: this.value.strength };
+            } else if (dual && z.strengthNum2 && x >= z.strengthNum2.x && x < z.strengthNum2.x + z.strengthNum2.w) {
+                this._dragState = { key: "strengthTwo", startX: event.canvasX ?? event.clientX, startVal: this.value.strengthTwo ?? this.value.strength };
+            } else {
+                this._dragState = null;
+            }
+            return true;
+        }
+
+        if (t === "pointermove" || t === "mousemove") {
+            if (this._dragState) {
+                const dx = (event.canvasX ?? event.clientX) - this._dragState.startX;
+                if (Math.abs(dx) > 2) {
+                    const delta = dx * 0.01;
+                    const newVal = Math.max(-20, Math.min(20, this._dragState.startVal + delta));
+                    this.value = { ...this.value, [this._dragState.key]: Math.round(newVal * 100) / 100 };
+                    this._dragState._dragged = true;
+                    node.setDirtyCanvas(true);
+                }
+                return true;
+            }
+            return false;
+        }
+
         const isUp = t === "pointerup" || t === "mouseup";
+        const isDblClick = t === "dblclick";
+
+        if (isUp && this._dragState?._dragged) {
+            this._dragState = null;
+            return true;
+        }
+        this._dragState = null;
+
         if (!isUp && !isDblClick) return false;
 
-        const x = pos[0];
-        const z = loraZones(node.size[0]);
-
-        // dblclick — only handle strength zone
+        // dblclick — handle strength zones
         if (isDblClick) {
             if (x >= z.strengthNum.x && x < z.strengthNum.x + z.strengthNum.w) {
-                showStrengthInput(event, this, node);
+                showStrengthInput(event, this, node, "strength");
+                return true;
+            }
+            if (dual && z.strengthNum2 && x >= z.strengthNum2.x && x < z.strengthNum2.x + z.strengthNum2.w) {
+                showStrengthInput(event, this, node, "strengthTwo");
                 return true;
             }
             return false;
@@ -687,38 +816,68 @@ function createLoraWidget(node, index, initialValue) {
             node.setDirtyCanvas(true);
             return true;
         }
-        // left arrow — decrement strength
+
+        // --- Strength column 1 ---
         if (x >= z.arrowLeft.x && x < z.arrowLeft.x + z.arrowLeft.w) {
             const s = Math.max(-20, this.value.strength - 0.05);
             this.value = { ...this.value, strength: Math.round(s * 100) / 100 };
             node.setDirtyCanvas(true);
             return true;
         }
-        // strength number — consume click, double-click to edit
         if (x >= z.strengthNum.x && x < z.strengthNum.x + z.strengthNum.w) {
             const now = Date.now();
             if (now - this._lastStrengthClick < 500) {
                 this._lastStrengthClick = 0;
-                showStrengthInput(event, this, node);
+                showStrengthInput(event, this, node, "strength");
             } else {
                 this._lastStrengthClick = now;
             }
             return true;
         }
-        // right arrow — increment strength
         if (x >= z.arrowRight.x && x < z.arrowRight.x + z.arrowRight.w) {
             const s = Math.min(20, this.value.strength + 0.05);
             this.value = { ...this.value, strength: Math.round(s * 100) / 100 };
             node.setDirtyCanvas(true);
             return true;
         }
+
+        // --- Strength column 2 (dual mode) ---
+        if (dual && z.arrowLeft2) {
+            if (x >= z.arrowLeft2.x && x < z.arrowLeft2.x + z.arrowLeft2.w) {
+                const s2 = (this.value.strengthTwo ?? this.value.strength) - 0.05;
+                this.value = { ...this.value, strengthTwo: Math.round(Math.max(-20, s2) * 100) / 100 };
+                node.setDirtyCanvas(true);
+                return true;
+            }
+            if (x >= z.strengthNum2.x && x < z.strengthNum2.x + z.strengthNum2.w) {
+                const now = Date.now();
+                if (now - this._lastStrengthClick2 < 500) {
+                    this._lastStrengthClick2 = 0;
+                    showStrengthInput(event, this, node, "strengthTwo");
+                } else {
+                    this._lastStrengthClick2 = now;
+                }
+                return true;
+            }
+            if (x >= z.arrowRight2.x && x < z.arrowRight2.x + z.arrowRight2.w) {
+                const s2 = (this.value.strengthTwo ?? this.value.strength) + 0.05;
+                this.value = { ...this.value, strengthTwo: Math.round(Math.min(20, s2) * 100) / 100 };
+                node.setDirtyCanvas(true);
+                return true;
+            }
+        }
+
         // name zone — open dropdown
         showLoraDropdown(event, this, node);
         return true;
     };
 
     w.serializeValue = function () {
-        return this.value;
+        const v = { ...this.value };
+        if (!isDualMode(node)) {
+            delete v.strengthTwo;
+        }
+        return v;
     };
 
     return w;
@@ -732,9 +891,10 @@ function createToggleAllWidget(node) {
 
     w.draw = function (ctx, _node, width, y, H) {
         this.last_y = y;
+        const dual = isDualMode(node);
         const switchX = MARGIN + SWITCH_PAD;
         const switchY = y + (H - SWITCH_H) / 2;
-        const z = loraZones(width);
+        const z = loraZones(width, dual);
         const loraW = getLoraWidgets(node);
         const allOn = loraW.length > 0 && loraW.every(lw => lw.value.on !== false);
         const someOn = loraW.some(lw => lw.value.on !== false);
@@ -752,6 +912,17 @@ function createToggleAllWidget(node) {
         ctx.textAlign = "left";
         ctx.textBaseline = "middle";
         ctx.fillText("Toggle All", z.name.x, y + H / 2);
+
+        // Strength column header labels
+        ctx.font = "10px sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillStyle = LiteGraph.WIDGET_SECONDARY_TEXT_COLOR || "#999";
+        if (dual && z.strengthNum2) {
+            ctx.fillText("Model", z.strengthNum.x + z.strengthNum.w / 2, y + H / 2);
+            ctx.fillText("Clip", z.strengthNum2.x + z.strengthNum2.w / 2, y + H / 2);
+        } else {
+            ctx.fillText("Strength", z.strengthNum.x + z.strengthNum.w / 2, y + H / 2);
+        }
     };
 
     w.mouse = function (event) {
@@ -772,24 +943,47 @@ function createToggleAllWidget(node) {
 }
 
 function createAddLoraButton(node) {
-    const btn = node.addWidget("button", "add_lora", "Add LoRA", () => {
-        const loraW = getLoraWidgets(node);
-        const newIndex = loraW.length + 1;
-        const newW = createLoraWidget(node, newIndex, { on: true, lora: "None", strength: 1.0 });
-        // Move new widget before the Add LoRA button
-        const widgets = node.widgets;
-        const newWIdx = widgets.indexOf(newW);
-        const btnIdx = widgets.indexOf(btn);
-        if (newWIdx > btnIdx) {
-            widgets.splice(newWIdx, 1);
-            widgets.splice(btnIdx, 0, newW);
+    const btn = node.addWidget("button", "add_lora", "Add LoRA", (_, __, ___, event) => {
+        // Show chooser dropdown with folder-grouped LoRA list
+        const filteredValues = loraValues.filter(v => v !== "None");
+        if (filteredValues.length === 0) {
+            // No LoRAs available — add a blank slot
+            addLoraSlot(node, btn, "None");
+            return;
         }
-        fitNodeHeight(node);
-        node.setDirtyCanvas(true);
+        const items = buildGroupedLoraMenu(["None", ...filteredValues], (v) => {
+            addLoraSlot(node, btn, v);
+        });
+        new LiteGraph.ContextMenu(items, {
+            event: event,
+            scale: app.canvas.ds?.scale || 1,
+        });
     });
     btn.serialize = false;
     btn._isAddLora = true;
     return btn;
+}
+
+function addLoraSlot(node, btn, loraName) {
+    const loraW = getLoraWidgets(node);
+    const newIndex = loraW.length + 1;
+    const dual = isDualMode(node);
+    const newW = createLoraWidget(node, newIndex, {
+        on: loraName !== "None",
+        lora: loraName,
+        strength: 1.0,
+        strengthTwo: dual ? 1.0 : null,
+    });
+    // Move new widget before the Add LoRA button
+    const widgets = node.widgets;
+    const newWIdx = widgets.indexOf(newW);
+    const btnIdx = widgets.indexOf(btn);
+    if (newWIdx > btnIdx) {
+        widgets.splice(newWIdx, 1);
+        widgets.splice(btnIdx, 0, newW);
+    }
+    fitNodeHeight(node);
+    node.setDirtyCanvas(true);
 }
 
 // -- Renumber lora widget names to keep them sequential --------------------
@@ -809,6 +1003,10 @@ function renumberLoraWidgets(node) {
 // -- Setup & lifecycle -----------------------------------------------------
 
 function setupLoraNode(node) {
+    // Initialize the showStrengths property
+    if (!node.properties) node.properties = {};
+    if (!node.properties.showStrengths) node.properties.showStrengths = "Single";
+
     // Remove any auto-created optional widgets/inputs from FlexibleOptionalInputType
     node.widgets = (node.widgets || []).filter(w =>
         w.name === "model" || w.name === "clip" ||
@@ -824,12 +1022,35 @@ function setupLoraNode(node) {
     createToggleAllWidget(node);
 
     // Create one default LoRA slot
-    createLoraWidget(node, 1, { on: true, lora: "None", strength: 1.0 });
+    createLoraWidget(node, 1, { on: true, lora: "None", strength: 1.0, strengthTwo: null });
 
     // Create Add LoRA button
     createAddLoraButton(node);
 
     fitNodeHeight(node);
+
+    // Handle property changes (mode transitions)
+    const origOnPropertyChanged = node.onPropertyChanged;
+    node.onPropertyChanged = function (name, value, prevValue) {
+        if (origOnPropertyChanged) origOnPropertyChanged.call(this, name, value, prevValue);
+        if (name === "showStrengths") {
+            const loraW = getLoraWidgets(node);
+            if (value === "Model & Clip") {
+                // Switching to dual: set strengthTwo = strength on all widgets
+                for (const lw of loraW) {
+                    if (lw.value.strengthTwo == null) {
+                        lw.value = { ...lw.value, strengthTwo: lw.value.strength };
+                    }
+                }
+            } else {
+                // Switching to single: clear strengthTwo
+                for (const lw of loraW) {
+                    lw.value = { ...lw.value, strengthTwo: null };
+                }
+            }
+            node.setDirtyCanvas(true);
+        }
+    };
 
     // Workflow load — restore slots from saved widget values
     const origConfigure = node.configure;
@@ -846,6 +1067,11 @@ function setupLoraNode(node) {
 
         origConfigure?.call(this, info);
 
+        // Restore showStrengths property
+        if (info.properties?.showStrengths) {
+            node.properties.showStrengths = info.properties.showStrengths;
+        }
+
         // Rebuild from saved widgets_values
         const savedValues = info.widgets_values || [];
         const loraSlotValues = savedValues.filter(
@@ -861,10 +1087,11 @@ function setupLoraNode(node) {
                     on: sv.on !== false,
                     lora: sv.lora || "None",
                     strength: typeof sv.strength === "number" ? sv.strength : 1.0,
+                    strengthTwo: sv.strengthTwo ?? null,
                 });
             }
         } else {
-            createLoraWidget(node, 1, { on: true, lora: "None", strength: 1.0 });
+            createLoraWidget(node, 1, { on: true, lora: "None", strength: 1.0, strengthTwo: null });
         }
 
         createAddLoraButton(node);
@@ -964,6 +1191,18 @@ app.registerExtension({
         const folderKey = NODE_FOLDER_MAP[nodeData.name];
         const isLoraNode = nodeData.name === "SynologyLoRALoader";
 
+        // Register the showStrengths property for the LoRA node
+        if (isLoraNode) {
+            nodeType.prototype.properties = {
+                ...(nodeType.prototype.properties || {}),
+                showStrengths: "Single",
+            };
+            // Expose as a combo widget in the Properties panel
+            const propWidgets = nodeType.prototype.widgets_info || {};
+            propWidgets["showStrengths"] = { widget: "combo", values: ["Single", "Model & Clip"] };
+            nodeType.prototype.widgets_info = propWidgets;
+        }
+
         const origOnCreated = nodeType.prototype.onNodeCreated;
 
         nodeType.prototype.onNodeCreated = function () {
@@ -974,6 +1213,30 @@ app.registerExtension({
             // --- Dynamic LoRA slot management ---
             if (isLoraNode) {
                 setupLoraNode(node);
+
+                // API JSON loading workaround: ComfyUI's API format doesn't call
+                // configure(), so we detect & restore from the raw widgets array
+                setTimeout(() => {
+                    const hasLoraSlots = (node.widgets || []).some(w => w._isLoraSlot);
+                    if (!hasLoraSlots) return; // already configured properly
+                    // Check if any lora slot has a string value (API JSON format)
+                    const apiSlots = (node.widgets || []).filter(
+                        w => w._isLoraSlot && typeof w.value === "string"
+                    );
+                    if (apiSlots.length > 0) {
+                        // Re-run setup — the API format set string values instead of objects
+                        for (const aw of apiSlots) {
+                            const name = aw.value;
+                            aw.value = {
+                                on: name !== "None",
+                                lora: name,
+                                strength: 1.0,
+                                strengthTwo: isDualMode(node) ? 1.0 : null,
+                            };
+                        }
+                        node.setDirtyCanvas(true);
+                    }
+                }, 16);
             }
 
             // --- Auth button ---
