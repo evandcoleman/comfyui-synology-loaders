@@ -664,9 +664,21 @@ function createLoraWidget(node, index, initialValue) {
     w.mouse = function (event, pos) {
         const t = event.type;
         if (t === "pointerdown" || t === "mousedown") return true;
-        if (t !== "pointerup" && t !== "mouseup") return false;
+        const isDblClick = t === "dblclick";
+        const isUp = t === "pointerup" || t === "mouseup";
+        if (!isUp && !isDblClick) return false;
+
         const x = pos[0];
         const z = loraZones(node.size[0]);
+
+        // dblclick — only handle strength zone
+        if (isDblClick) {
+            if (x >= z.strengthNum.x && x < z.strengthNum.x + z.strengthNum.w) {
+                showStrengthInput(event, this, node);
+                return true;
+            }
+            return false;
+        }
 
         // toggle switch
         if (x < z.toggle.x + z.toggle.w) {
@@ -681,10 +693,10 @@ function createLoraWidget(node, index, initialValue) {
             node.setDirtyCanvas(true);
             return true;
         }
-        // strength number — double-click to open inline input
+        // strength number — consume click, double-click to edit
         if (x >= z.strengthNum.x && x < z.strengthNum.x + z.strengthNum.w) {
             const now = Date.now();
-            if (now - this._lastStrengthClick < 300) {
+            if (now - this._lastStrengthClick < 500) {
                 this._lastStrengthClick = 0;
                 showStrengthInput(event, this, node);
             } else {
