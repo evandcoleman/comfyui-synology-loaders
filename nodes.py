@@ -73,8 +73,8 @@ class SynologyLoRALoader:
             "required": {
                 "model": ("MODEL",),
                 "lora_name": (_get_model_list("loras"),),
-                "strength_model": ("FLOAT", {"default": 1.0, "min": -20.0, "max": 20.0, "step": 0.01}),
-                "strength_clip": ("FLOAT", {"default": 1.0, "min": -20.0, "max": 20.0, "step": 0.01}),
+                "strength_model": ("FLOAT", {"default": 1.0, "min": -20.0, "max": 20.0, "step": 0.05}),
+                "strength_clip": ("FLOAT", {"default": 1.0, "min": -20.0, "max": 20.0, "step": 0.05}),
             },
             "optional": {
                 "clip": ("CLIP",),
