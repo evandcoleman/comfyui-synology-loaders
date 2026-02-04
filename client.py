@@ -368,7 +368,7 @@ class SynologyClient:
 
         return self._with_session_retry(_do)
 
-    def download_model(self, folder, filename):
+    def download_model(self, folder, filename, progress_callback=None):
         """Download a model file from the NAS. Returns the local cache path.
         Skips download if the file is already cached."""
         cache_folder = os.path.join(self._cache_dir, folder)
@@ -406,11 +406,16 @@ class SynologyClient:
 
             os.makedirs(os.path.dirname(local_path), exist_ok=True)
             tmp_path = local_path + ".tmp"
+            total_size = int(resp.headers.get("Content-Length", 0))
+            downloaded = 0
             try:
                 with open(tmp_path, "wb") as f:
                     for chunk in resp.iter_content(chunk_size=8 * 1024 * 1024):
                         if chunk:
                             f.write(chunk)
+                            downloaded += len(chunk)
+                            if progress_callback and total_size > 0:
+                                progress_callback(downloaded, total_size)
                 os.rename(tmp_path, local_path)
             except Exception:
                 if os.path.exists(tmp_path):

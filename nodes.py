@@ -45,8 +45,12 @@ class SynologyCheckpointLoader:
 
     def load(self, ckpt_name):
         import comfy.sd
+        import comfy.utils
         client = get_client()
-        local_path = client.download_model("checkpoints", ckpt_name)
+        pbar = comfy.utils.ProgressBar(100)
+        def on_progress(downloaded, total):
+            pbar.update_absolute(int(downloaded * 100 / total), 100)
+        local_path = client.download_model("checkpoints", ckpt_name, progress_callback=on_progress)
         return comfy.sd.load_checkpoint_guess_config(local_path)[:3]
 
 # ---------------------------------------------------------------------------
@@ -87,7 +91,10 @@ class SynologyLoRALoader:
 
         if self.loaded_lora_name != lora_name:
             client = get_client()
-            local_path = client.download_model("loras", lora_name)
+            pbar = comfy.utils.ProgressBar(100)
+            def on_progress(downloaded, total):
+                pbar.update_absolute(int(downloaded * 100 / total), 100)
+            local_path = client.download_model("loras", lora_name, progress_callback=on_progress)
             self.loaded_lora = comfy.utils.load_torch_file(local_path, safe_load=True)
             self.loaded_lora_name = lora_name
 
@@ -120,7 +127,10 @@ class SynologyVAELoader:
         import comfy.sd
 
         client = get_client()
-        local_path = client.download_model("vae", vae_name)
+        pbar = comfy.utils.ProgressBar(100)
+        def on_progress(downloaded, total):
+            pbar.update_absolute(int(downloaded * 100 / total), 100)
+        local_path = client.download_model("vae", vae_name, progress_callback=on_progress)
         sd = comfy.utils.load_torch_file(local_path)
         return (comfy.sd.VAE(sd=sd),)
 
@@ -148,7 +158,11 @@ class SynologyControlNetLoader:
 
     def load(self, control_net_name):
         import comfy.controlnet
+        import comfy.utils
 
         client = get_client()
-        local_path = client.download_model("controlnet", control_net_name)
+        pbar = comfy.utils.ProgressBar(100)
+        def on_progress(downloaded, total):
+            pbar.update_absolute(int(downloaded * 100 / total), 100)
+        local_path = client.download_model("controlnet", control_net_name, progress_callback=on_progress)
         return (comfy.controlnet.load_controlnet(local_path),)
