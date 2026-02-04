@@ -908,7 +908,7 @@ function createAddLoraButton(node) {
             widgets.splice(newWIdx, 1);
             widgets.splice(btnIdx, 0, newW);
         }
-        node.setSize(node.computeSize());
+        fitNodeHeight(node);
         node.setDirtyCanvas(true);
     });
     btn.serialize = false;
@@ -917,6 +917,11 @@ function createAddLoraButton(node) {
 }
 
 // -- Renumber lora widget names to keep them sequential --------------------
+
+function fitNodeHeight(node) {
+    const computed = node.computeSize();
+    node.setSize([node.size[0], computed[1]]);
+}
 
 function renumberLoraWidgets(node) {
     const loraW = getLoraWidgets(node);
@@ -948,7 +953,7 @@ function setupLoraNode(node) {
     // Create Add LoRA button
     createAddLoraButton(node);
 
-    node.setSize(node.computeSize());
+    fitNodeHeight(node);
 
     // Workflow load — restore slots from saved widget values
     const origConfigure = node.configure;
@@ -987,7 +992,7 @@ function setupLoraNode(node) {
         }
 
         createAddLoraButton(node);
-        node.setSize(node.computeSize());
+        fitNodeHeight(node);
     };
 
     // Right-click context menu
@@ -1053,7 +1058,7 @@ function setupLoraNode(node) {
                 const idx = node.widgets.indexOf(loraW[slotIdx]);
                 if (idx >= 0) node.widgets.splice(idx, 1);
                 renumberLoraWidgets(node);
-                node.setSize(node.computeSize());
+                fitNodeHeight(node);
                 node.setDirtyCanvas(true);
             },
         });
