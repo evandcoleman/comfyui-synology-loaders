@@ -538,166 +538,18 @@ function loraZones(width) {
 
 // -- Interaction helpers ---------------------------------------------------
 
-function buildLoraTree(values) {
-    const root = { folders: {}, files: [] };
-    for (const val of values) {
-        if (val === "None") continue;
-        const parts = val.split("/");
-        let current = root;
-        for (let i = 0; i < parts.length - 1; i++) {
-            if (!current.folders[parts[i]]) {
-                current.folders[parts[i]] = { folders: {}, files: [] };
-            }
-            current = current.folders[parts[i]];
-        }
-        current.files.push(val);
-    }
-    return root;
-}
-
 function showLoraDropdown(event, widget, node) {
-    const menu = document.createElement("div");
-    Object.assign(menu.style, {
-        position: "fixed",
-        background: "#2a2a2a",
-        border: "1px solid #555",
-        borderRadius: "4px",
-        maxHeight: "400px",
-        overflowY: "auto",
-        zIndex: "20000",
-        minWidth: "220px",
-        maxWidth: "400px",
-        boxShadow: "0 4px 12px rgba(0,0,0,0.5)",
-    });
-
-    let left = event.clientX;
-    let top = event.clientY;
-    menu.style.left = left + "px";
-    menu.style.top = top + "px";
-
-    const val = widget.value;
-    const tree = buildLoraTree(loraValues);
-
-    // Auto-expand folders along the path to the currently selected LoRA
-    const expanded = new Set();
-    if (val.lora && val.lora !== "None") {
-        const parts = val.lora.split("/");
-        let path = "";
-        for (let i = 0; i < parts.length - 1; i++) {
-            path = path ? path + "/" + parts[i] : parts[i];
-            expanded.add(path);
-        }
-    }
-
-    function makeItem(label, opts = {}) {
-        const item = document.createElement("div");
-        item.textContent = label;
-        if (opts.title) item.title = opts.title;
-        const indent = (opts.depth || 0) * 16;
-        Object.assign(item.style, {
-            padding: `5px 12px 5px ${12 + indent}px`,
-            cursor: "pointer",
-            fontSize: "13px",
-            color: opts.color || "#ddd",
-            background: opts.bg || "transparent",
-            whiteSpace: "nowrap",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-        });
-        const restBg = opts.bg || "transparent";
-        item.onmouseenter = () => { item.style.background = "#444"; };
-        item.onmouseleave = () => { item.style.background = restBg; };
-        return item;
-    }
-
-    function renderTree(container, treeNode, depth, pathPrefix) {
-        const folderNames = Object.keys(treeNode.folders).sort((a, b) =>
-            a.localeCompare(b, undefined, { sensitivity: "base" })
-        );
-        for (const folderName of folderNames) {
-            const fullPath = pathPrefix ? pathPrefix + "/" + folderName : folderName;
-            const isExpanded = expanded.has(fullPath);
-            const arrow = isExpanded ? "\u25BC" : "\u25B6";
-            const item = makeItem(`${arrow}  ${folderName}`, {
-                depth,
-                color: "#999",
-            });
-            item.onclick = () => {
-                const scrollTop = menu.scrollTop;
-                if (expanded.has(fullPath)) {
-                    expanded.delete(fullPath);
-                } else {
-                    expanded.add(fullPath);
-                }
-                rebuildMenu();
-                menu.scrollTop = scrollTop;
-            };
-            container.appendChild(item);
-
-            if (isExpanded) {
-                renderTree(container, treeNode.folders[folderName], depth + 1, fullPath);
-            }
-        }
-
-        const sortedFiles = [...treeNode.files].sort((a, b) =>
-            a.localeCompare(b, undefined, { sensitivity: "base" })
-        );
-        for (const loraName of sortedFiles) {
-            const fileName = loraName.split("/").pop().replace(/\.[^.]+$/, "");
-            const selected = loraName === val.lora;
-            const item = makeItem(fileName, {
-                depth,
-                title: loraName,
-                color: selected ? "#4a9eff" : "#ddd",
-                bg: selected ? "#333" : "transparent",
-            });
-            item.onclick = () => {
-                widget.value = { ...widget.value, lora: loraName, on: loraName !== "None" };
-                node.setDirtyCanvas(true);
-                close();
-            };
-            container.appendChild(item);
-        }
-    }
-
-    function rebuildMenu() {
-        menu.innerHTML = "";
-
-        // "None" at top
-        const noneSelected = val.lora === "None";
-        const noneItem = makeItem("None", {
-            color: noneSelected ? "#4a9eff" : "#ddd",
-            bg: noneSelected ? "#333" : "transparent",
-        });
-        noneItem.onclick = () => {
-            widget.value = { ...widget.value, lora: "None", on: false };
+    const values = loraValues.map(v => ({
+        content: v === "None" ? "None" : v.replace(/\.[^.]+$/, ""),
+        callback: () => {
+            widget.value = { ...widget.value, lora: v, on: v !== "None" };
             node.setDirtyCanvas(true);
-            close();
-        };
-        menu.appendChild(noneItem);
-
-        renderTree(menu, tree, 0, "");
-    }
-
-    rebuildMenu();
-
-    function close() {
-        menu.remove();
-        document.removeEventListener("mousedown", outsideClick, true);
-    }
-    function outsideClick(e) {
-        if (!menu.contains(e.target)) close();
-    }
-
-    document.body.appendChild(menu);
-
-    requestAnimationFrame(() => {
-        const r = menu.getBoundingClientRect();
-        if (r.right > window.innerWidth) menu.style.left = Math.max(0, left - r.width) + "px";
-        if (r.bottom > window.innerHeight) menu.style.top = Math.max(0, top - r.height) + "px";
+        }
+    }));
+    new LiteGraph.ContextMenu(values, {
+        event: event,
+        scale: app.canvas.ds?.scale || 1,
     });
-
-    setTimeout(() => document.addEventListener("mousedown", outsideClick, true), 0);
 }
 
 function showStrengthInput(event, widget, node) {
@@ -757,6 +609,7 @@ function createLoraWidget(node, index, initialValue) {
     w.type = "lora_slot";
     w.value = val;
     w._isLoraSlot = true;
+    w._lastStrengthClick = 0;
 
     w.draw = function (ctx, _node, width, y, H) {
         this.last_y = y;
@@ -767,9 +620,11 @@ function createLoraWidget(node, index, initialValue) {
         const on = v.on !== false;
 
         // background
-        ctx.fillStyle = "#2a2a2a";
+        ctx.fillStyle = LiteGraph.WIDGET_BGCOLOR || "#2a2a2a";
+        ctx.strokeStyle = LiteGraph.WIDGET_OUTLINE_COLOR || "#666";
         roundRect(ctx, MARGIN, y, width - MARGIN * 2, H, [4]);
         ctx.fill();
+        ctx.stroke();
 
         // toggle switch
         drawSwitch(ctx, switchX, switchY, on, false);
@@ -779,26 +634,26 @@ function createLoraWidget(node, index, initialValue) {
 
         // LoRA name
         const rawName = v.lora === "None" ? "None" : v.lora.replace(/\.[^.]+$/, "");
-        ctx.fillStyle = on ? "#ccc" : "#666";
+        ctx.fillStyle = on ? (LiteGraph.WIDGET_TEXT_COLOR || "#ddd") : "#666";
         ctx.font = "12px sans-serif";
         ctx.textAlign = "left";
         ctx.textBaseline = "middle";
         ctx.fillText(truncateText(ctx, rawName, z.name.w), z.name.x, y + H / 2);
 
         // left arrow
-        ctx.fillStyle = "#888";
+        ctx.fillStyle = LiteGraph.WIDGET_SECONDARY_TEXT_COLOR || "#999";
         ctx.font = "11px sans-serif";
         ctx.textAlign = "center";
         ctx.fillText("\u25C0", z.arrowLeft.x + z.arrowLeft.w / 2, y + H / 2);
 
         // strength value
-        ctx.fillStyle = on ? "#aaa" : "#555";
+        ctx.fillStyle = on ? (LiteGraph.WIDGET_SECONDARY_TEXT_COLOR || "#999") : "#555";
         ctx.font = "11px monospace";
         ctx.textAlign = "center";
         ctx.fillText(v.strength.toFixed(2), z.strengthNum.x + z.strengthNum.w / 2, y + H / 2);
 
         // right arrow
-        ctx.fillStyle = "#888";
+        ctx.fillStyle = LiteGraph.WIDGET_SECONDARY_TEXT_COLOR || "#999";
         ctx.font = "11px sans-serif";
         ctx.textAlign = "center";
         ctx.fillText("\u25B6", z.arrowRight.x + z.arrowRight.w / 2, y + H / 2);
@@ -826,9 +681,15 @@ function createLoraWidget(node, index, initialValue) {
             node.setDirtyCanvas(true);
             return true;
         }
-        // strength number — open inline input
+        // strength number — double-click to open inline input
         if (x >= z.strengthNum.x && x < z.strengthNum.x + z.strengthNum.w) {
-            showStrengthInput(event, this, node);
+            const now = Date.now();
+            if (now - this._lastStrengthClick < 300) {
+                this._lastStrengthClick = 0;
+                showStrengthInput(event, this, node);
+            } else {
+                this._lastStrengthClick = now;
+            }
             return true;
         }
         // right arrow — increment strength
@@ -865,13 +726,15 @@ function createToggleAllWidget(node) {
         const allOn = loraW.length > 0 && loraW.every(lw => lw.value.on !== false);
         const someOn = loraW.some(lw => lw.value.on !== false);
 
-        ctx.fillStyle = "#252525";
+        ctx.fillStyle = LiteGraph.WIDGET_BGCOLOR || "#2a2a2a";
+        ctx.strokeStyle = LiteGraph.WIDGET_OUTLINE_COLOR || "#666";
         roundRect(ctx, MARGIN, y, width - MARGIN * 2, H, [4]);
         ctx.fill();
+        ctx.stroke();
 
         drawSwitch(ctx, switchX, switchY, allOn, !allOn && someOn);
 
-        ctx.fillStyle = "#888";
+        ctx.fillStyle = LiteGraph.WIDGET_SECONDARY_TEXT_COLOR || "#999";
         ctx.font = "11px sans-serif";
         ctx.textAlign = "left";
         ctx.textBaseline = "middle";
