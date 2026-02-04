@@ -85,9 +85,10 @@ class SynologyLoRALoader:
         return {
             "required": {
                 "model": ("MODEL",),
-                "clip": ("CLIP",),
             },
-            "optional": FlexibleOptionalInputType(),
+            "optional": FlexibleOptionalInputType({
+                "clip": ("CLIP",),
+            }),
         }
 
     @classmethod
@@ -98,7 +99,7 @@ class SynologyLoRALoader:
     def IS_CHANGED(cls, **kwargs):
         return get_client().auth_version
 
-    def load(self, model, clip, **kwargs):
+    def load(self, model, clip=None, **kwargs):
         import comfy.utils
         import comfy.sd
 
