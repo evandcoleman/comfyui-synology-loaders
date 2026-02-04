@@ -472,76 +472,370 @@ function showFolderBrowser(folderKey) {
 
 const LORA_SLOT_RE = /^(?:lora|strength)_(\d+)$/;
 
-/**
- * Rebuild the dynamic lora/strength widgets from node.properties.loraSlots.
- * Widgets are inserted before the "Add LoRA" button so auth/browse stay last.
- */
+// -- Canvas drawing helpers ------------------------------------------------
+
+function roundRect(ctx, x, y, w, h, r) {
+    if (ctx.roundRect) {
+        ctx.beginPath();
+        ctx.roundRect(x, y, w, h, r);
+    } else {
+        ctx.beginPath();
+        ctx.rect(x, y, w, h);
+    }
+}
+
+function drawCheckbox(ctx, x, y, size, checked, partial) {
+    ctx.fillStyle = checked ? "#4a9eff" : partial ? "rgba(74,158,255,0.25)" : "transparent";
+    ctx.strokeStyle = checked || partial ? "#4a9eff" : "#666";
+    ctx.lineWidth = 1;
+    roundRect(ctx, x, y, size, size, [2]);
+    ctx.fill();
+    ctx.stroke();
+
+    if (checked || partial) {
+        ctx.strokeStyle = "#fff";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        if (checked) {
+            ctx.moveTo(x + 3, y + size / 2);
+            ctx.lineTo(x + size / 2 - 1, y + size - 3);
+            ctx.lineTo(x + size - 3, y + 3);
+        } else {
+            ctx.moveTo(x + 3, y + size / 2);
+            ctx.lineTo(x + size - 3, y + size / 2);
+        }
+        ctx.stroke();
+    }
+}
+
+function truncateText(ctx, text, maxWidth) {
+    if (ctx.measureText(text).width <= maxWidth) return text;
+    const ellipsis = "\u2026";
+    while (text.length > 1 && ctx.measureText(text + ellipsis).width > maxWidth) {
+        text = text.slice(0, -1);
+    }
+    return text + ellipsis;
+}
+
+// -- Zone layout (shared across draw & mouse) ------------------------------
+
+const MARGIN = 15;
+const TOGGLE_SIZE = 12;
+const TOGGLE_PAD = 4;
+const STRENGTH_WIDTH = 50;
+
+function loraZones(width) {
+    const toggleX = MARGIN + TOGGLE_PAD;
+    const nameX = toggleX + TOGGLE_SIZE + 8;
+    const strengthX = width - MARGIN - STRENGTH_WIDTH;
+    return {
+        toggle:   { x: MARGIN, w: nameX - MARGIN },
+        name:     { x: nameX,  w: strengthX - nameX - 4 },
+        strength: { x: strengthX, w: STRENGTH_WIDTH + MARGIN },
+    };
+}
+
+// -- Draw functions --------------------------------------------------------
+
+function drawToggleAll(ctx, node, width, y, H, slots) {
+    const z = loraZones(width);
+    const toggleX = MARGIN + TOGGLE_PAD;
+    const toggleY = y + (H - TOGGLE_SIZE) / 2;
+    const allEnabled = slots.length > 0 && slots.every(s => s.enabled !== false);
+    const someEnabled = slots.some(s => s.enabled !== false);
+
+    // background
+    ctx.fillStyle = "#252525";
+    roundRect(ctx, MARGIN, y, width - MARGIN * 2, H, [4]);
+    ctx.fill();
+
+    drawCheckbox(ctx, toggleX, toggleY, TOGGLE_SIZE, allEnabled, !allEnabled && someEnabled);
+
+    ctx.fillStyle = "#888";
+    ctx.font = "11px sans-serif";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillText("Toggle All", z.name.x, y + H / 2);
+}
+
+function drawLoraSlot(ctx, node, width, y, H, data) {
+    const z = loraZones(width);
+    const toggleX = MARGIN + TOGGLE_PAD;
+    const toggleY = y + (H - TOGGLE_SIZE) / 2;
+    const enabled = data.enabled !== false;
+
+    // background
+    ctx.fillStyle = "#2a2a2a";
+    roundRect(ctx, MARGIN, y, width - MARGIN * 2, H, [4]);
+    ctx.fill();
+
+    drawCheckbox(ctx, toggleX, toggleY, TOGGLE_SIZE, enabled, false);
+
+    // name
+    const rawName = data.lora === "None" ? "None" : data.lora.replace(/\.[^.]+$/, "");
+    ctx.fillStyle = enabled ? "#ccc" : "#666";
+    ctx.font = "12px sans-serif";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillText(truncateText(ctx, rawName, z.name.w), z.name.x, y + H / 2);
+
+    // strength (right-aligned)
+    ctx.fillStyle = enabled ? "#aaa" : "#555";
+    ctx.textAlign = "right";
+    ctx.font = "11px monospace";
+    ctx.fillText(data.strength.toFixed(2), width - MARGIN - 4, y + H / 2);
+}
+
+// -- Interaction helpers ---------------------------------------------------
+
+function showLoraDropdown(event, widget, data, node) {
+    const menu = document.createElement("div");
+    Object.assign(menu.style, {
+        position: "fixed",
+        background: "#2a2a2a",
+        border: "1px solid #555",
+        borderRadius: "4px",
+        maxHeight: "300px",
+        overflowY: "auto",
+        zIndex: "20000",
+        minWidth: "200px",
+        maxWidth: "350px",
+        boxShadow: "0 4px 12px rgba(0,0,0,0.5)",
+    });
+
+    // position near click, keep on screen
+    let left = event.clientX;
+    let top = event.clientY;
+    menu.style.left = left + "px";
+    menu.style.top = top + "px";
+    // will adjust after measuring below
+
+    for (const val of loraValues) {
+        const item = document.createElement("div");
+        const label = val === "None" ? "None" : val.replace(/\.[^.]+$/, "");
+        item.textContent = label;
+        item.title = val;
+        const selected = val === data.lora;
+        Object.assign(item.style, {
+            padding: "6px 12px",
+            cursor: "pointer",
+            fontSize: "13px",
+            color: selected ? "#4a9eff" : "#ddd",
+            background: selected ? "#333" : "transparent",
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+        });
+        item.onmouseenter = () => { item.style.background = "#444"; };
+        item.onmouseleave = () => { item.style.background = selected ? "#333" : "transparent"; };
+        item.onclick = () => {
+            data.lora = val;
+            data.enabled = val !== "None";
+            widget.value = data.enabled ? val : "None";
+            node.setDirtyCanvas(true);
+            close();
+        };
+        menu.appendChild(item);
+    }
+
+    function close() {
+        menu.remove();
+        document.removeEventListener("mousedown", outsideClick, true);
+    }
+    function outsideClick(e) {
+        if (!menu.contains(e.target)) close();
+    }
+
+    document.body.appendChild(menu);
+
+    // adjust position after rendering so we can measure
+    requestAnimationFrame(() => {
+        const r = menu.getBoundingClientRect();
+        if (r.right > window.innerWidth) menu.style.left = Math.max(0, left - r.width) + "px";
+        if (r.bottom > window.innerHeight) menu.style.top = Math.max(0, top - r.height) + "px";
+    });
+
+    setTimeout(() => document.addEventListener("mousedown", outsideClick, true), 0);
+}
+
+function showStrengthInput(event, data, strengthWidget, node) {
+    const input = document.createElement("input");
+    input.type = "number";
+    input.value = data.strength.toFixed(2);
+    input.step = "0.05";
+    input.min = "-20";
+    input.max = "20";
+    Object.assign(input.style, {
+        position: "fixed",
+        left: (event.clientX - 40) + "px",
+        top: (event.clientY - 12) + "px",
+        width: "60px",
+        padding: "4px 6px",
+        border: "1px solid #4a9eff",
+        borderRadius: "4px",
+        background: "#1a1a1a",
+        color: "#eee",
+        fontSize: "13px",
+        zIndex: "20000",
+        textAlign: "center",
+        outline: "none",
+    });
+
+    function apply() {
+        const val = parseFloat(input.value);
+        if (!isNaN(val)) {
+            data.strength = Math.max(-20, Math.min(20, val));
+            strengthWidget.value = data.strength;
+        }
+        input.remove();
+        node.setDirtyCanvas(true);
+    }
+
+    input.onblur = apply;
+    input.onkeydown = (e) => {
+        if (e.key === "Enter") { e.preventDefault(); apply(); }
+        if (e.key === "Escape") input.remove();
+    };
+
+    document.body.appendChild(input);
+    input.focus();
+    input.select();
+}
+
+// -- Sync / rebuild widgets ------------------------------------------------
+
 function syncLoraWidgets(node) {
     // Remove existing dynamic widgets
-    node.widgets = node.widgets.filter(w => !LORA_SLOT_RE.test(w.name));
+    node.widgets = node.widgets.filter(w =>
+        !LORA_SLOT_RE.test(w.name) && w.name !== "toggle_all"
+    );
     node._loraSlotWidgets = [];
 
     const slots = node.properties.loraSlots;
+    const newWidgets = [];     // will be inserted before "Add LoRA"
 
+    // --- Toggle All (custom widget) ---
+    if (slots.length > 0) {
+        newWidgets.push({
+            type: "custom",
+            name: "toggle_all",
+            value: null,
+            last_y: 0,
+            options: {},
+            draw(ctx, _node, width, y, H) {
+                this.last_y = y;
+                drawToggleAll(ctx, _node, width, y, H, slots);
+            },
+            mouse(event, pos) {
+                if (event.type === "mousedown") return true;
+                if (event.type !== "mouseup") return false;
+                const allEnabled = slots.every(s => s.enabled !== false);
+                const newState = !allEnabled;
+                for (let j = 0; j < slots.length; j++) {
+                    slots[j].enabled = newState;
+                    const sw = node._loraSlotWidgets[j];
+                    if (sw) sw.lora.value = newState ? slots[j].lora : "None";
+                }
+                node.setDirtyCanvas(true);
+                return true;
+            },
+            computeSize() { return [0, LiteGraph.NODE_WIDGET_HEIGHT || 20]; },
+            serialize: false,
+        });
+    }
+
+    // --- LoRA slots ---
     for (let i = 0; i < slots.length; i++) {
         const data = slots[i];
+        if (data.enabled === undefined) data.enabled = true;
 
-        const loraW = node.addWidget("combo", `lora_${i + 1}`, data.lora, (v) => {
-            if (node.properties.loraSlots[i]) {
-                node.properties.loraSlots[i].lora = v;
-            }
-        }, { values: loraValues });
+        // Combo widget — custom-drawn as a single-line slot
+        const loraW = node.addWidget(
+            "combo", `lora_${i + 1}`,
+            data.enabled ? data.lora : "None",
+            (v) => {
+                if (node.properties.loraSlots[i]) {
+                    node.properties.loraSlots[i].lora = v;
+                    node.properties.loraSlots[i].enabled = v !== "None";
+                }
+            },
+            { values: loraValues },
+        );
 
-        const strW = node.addWidget("number", `strength_${i + 1}`, data.strength, (v) => {
-            if (node.properties.loraSlots[i]) {
-                node.properties.loraSlots[i].strength = v;
+        // Hidden strength widget (keeps serialization working)
+        const strW = node.addWidget(
+            "number", `strength_${i + 1}`,
+            data.strength,
+            (v) => { if (node.properties.loraSlots[i]) node.properties.loraSlots[i].strength = v; },
+            { min: -20.0, max: 20.0, step: 0.01, precision: 2 },
+        );
+        strW._synOrigType = strW.type;
+        strW.type = "hidden";
+        strW.computeSize = () => [0, -4];
+
+        // Custom draw for the combo widget
+        loraW.draw = function (ctx, _node, width, y, H) {
+            this.last_y = y;
+            drawLoraSlot(ctx, _node, width, y, H, data);
+        };
+
+        // Custom mouse handler (replaces default combo behaviour)
+        loraW.mouse = function (event, pos) {
+            if (event.type === "mousedown") return true; // eat to prevent default combo popup
+            if (event.type !== "mouseup") return false;
+            const x = pos[0];
+            const z = loraZones(node.size[0]);
+
+            // toggle
+            if (x < z.toggle.x + z.toggle.w) {
+                data.enabled = !data.enabled;
+                loraW.value = data.enabled ? data.lora : "None";
+                node.setDirtyCanvas(true);
+                return true;
             }
-        }, { min: -20.0, max: 20.0, step: 0.01, precision: 2 });
+            // strength
+            if (x >= z.strength.x) {
+                showStrengthInput(event, data, strW, node);
+                return true;
+            }
+            // name
+            showLoraDropdown(event, loraW, data, node);
+            return true;
+        };
 
         node._loraSlotWidgets.push({ lora: loraW, strength: strW });
     }
 
-    // Move the newly appended widgets to just before the "Add LoRA" button
+    // Move addWidget-created widgets from the end → before "Add LoRA" button
     const addedCount = slots.length * 2;
     if (addedCount > 0) {
         const added = node.widgets.splice(node.widgets.length - addedCount, addedCount);
         const insertIdx = node.widgets.indexOf(node._loraAddBtn);
-        node.widgets.splice(insertIdx, 0, ...added);
+        node.widgets.splice(insertIdx, 0, ...newWidgets, ...added);
+    } else if (newWidgets.length > 0) {
+        const insertIdx = node.widgets.indexOf(node._loraAddBtn);
+        node.widgets.splice(insertIdx, 0, ...newWidgets);
     }
 
     node.setSize(node.computeSize());
 }
 
-/**
- * Determine which LoRA slot (index) was right-clicked, using widget.last_y
- * positions set by LiteGraph during rendering.  Returns -1 if none.
- */
+// -- Hit testing for right-click context menu ------------------------------
+
 function getClickedLoraSlot(node, canvas) {
     const nodeY = canvas.graph_mouse[1] - node.pos[1];
     const widgetH = LiteGraph.NODE_WIDGET_HEIGHT || 20;
 
     for (let i = 0; i < node._loraSlotWidgets.length; i++) {
-        const sw = node._loraSlotWidgets[i];
-        const loraY = sw.lora.last_y;
+        const loraY = node._loraSlotWidgets[i].lora.last_y;
         if (loraY == null) continue;
-
-        const strEnd = (sw.strength.last_y ?? loraY + widgetH) + widgetH;
-        if (nodeY >= loraY && nodeY < strEnd) {
-            return i;
-        }
+        if (nodeY >= loraY && nodeY < loraY + widgetH) return i;
     }
-
     return -1;
 }
 
-/**
- * Set up dynamic LoRA slot management on a SynologyLoRALoader node.
- *
- * - Removes auto-created optional widgets/inputs from INPUT_TYPES
- * - Adds an "Add LoRA" button
- * - Right-click context menu on slots: Move Up / Move Down / Remove
- * - Persists slot data in node.properties.loraSlots for workflow save/load
- */
+// -- Setup & lifecycle -----------------------------------------------------
+
 function setupLoraSlots(node) {
     node._loraSlotWidgets = [];
 
@@ -570,13 +864,13 @@ function setupLoraSlots(node) {
     // Workflow load — restore slots from properties
     const origConfigure = node.configure;
     node.configure = function (data) {
-        // Clear dynamic widgets before configure restores old widget values
-        node.widgets = node.widgets.filter(w => !LORA_SLOT_RE.test(w.name));
+        node.widgets = node.widgets.filter(w =>
+            !LORA_SLOT_RE.test(w.name) && w.name !== "toggle_all"
+        );
         node._loraSlotWidgets = [];
 
         origConfigure?.call(this, data);
 
-        // Restore from properties (populated by configure from saved workflow)
         if (!Array.isArray(node.properties?.loraSlots) || node.properties.loraSlots.length === 0) {
             node.properties = node.properties || {};
             node.properties.loraSlots = [{ lora: "None", strength: 1.0 }];
