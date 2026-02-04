@@ -538,6 +538,23 @@ function loraZones(width) {
 
 // -- Interaction helpers ---------------------------------------------------
 
+function buildLoraTree(values) {
+    const root = { folders: {}, files: [] };
+    for (const val of values) {
+        if (val === "None") continue;
+        const parts = val.split("/");
+        let current = root;
+        for (let i = 0; i < parts.length - 1; i++) {
+            if (!current.folders[parts[i]]) {
+                current.folders[parts[i]] = { folders: {}, files: [] };
+            }
+            current = current.folders[parts[i]];
+        }
+        current.files.push(val);
+    }
+    return root;
+}
+
 function showLoraDropdown(event, widget, node) {
     const menu = document.createElement("div");
     Object.assign(menu.style, {
@@ -545,11 +562,11 @@ function showLoraDropdown(event, widget, node) {
         background: "#2a2a2a",
         border: "1px solid #555",
         borderRadius: "4px",
-        maxHeight: "300px",
+        maxHeight: "400px",
         overflowY: "auto",
         zIndex: "20000",
-        minWidth: "200px",
-        maxWidth: "350px",
+        minWidth: "220px",
+        maxWidth: "400px",
         boxShadow: "0 4px 12px rgba(0,0,0,0.5)",
     });
 
@@ -559,32 +576,110 @@ function showLoraDropdown(event, widget, node) {
     menu.style.top = top + "px";
 
     const val = widget.value;
+    const tree = buildLoraTree(loraValues);
 
-    for (const loraName of loraValues) {
+    // Auto-expand folders along the path to the currently selected LoRA
+    const expanded = new Set();
+    if (val.lora && val.lora !== "None") {
+        const parts = val.lora.split("/");
+        let path = "";
+        for (let i = 0; i < parts.length - 1; i++) {
+            path = path ? path + "/" + parts[i] : parts[i];
+            expanded.add(path);
+        }
+    }
+
+    function makeItem(label, opts = {}) {
         const item = document.createElement("div");
-        const label = loraName === "None" ? "None" : loraName.replace(/\.[^.]+$/, "");
         item.textContent = label;
-        item.title = loraName;
-        const selected = loraName === val.lora;
+        if (opts.title) item.title = opts.title;
+        const indent = (opts.depth || 0) * 16;
         Object.assign(item.style, {
-            padding: "6px 12px",
+            padding: `5px 12px 5px ${12 + indent}px`,
             cursor: "pointer",
             fontSize: "13px",
-            color: selected ? "#4a9eff" : "#ddd",
-            background: selected ? "#333" : "transparent",
+            color: opts.color || "#ddd",
+            background: opts.bg || "transparent",
             whiteSpace: "nowrap",
             overflow: "hidden",
             textOverflow: "ellipsis",
         });
+        const restBg = opts.bg || "transparent";
         item.onmouseenter = () => { item.style.background = "#444"; };
-        item.onmouseleave = () => { item.style.background = selected ? "#333" : "transparent"; };
-        item.onclick = () => {
-            widget.value = { ...widget.value, lora: loraName, on: loraName !== "None" };
+        item.onmouseleave = () => { item.style.background = restBg; };
+        return item;
+    }
+
+    function renderTree(container, treeNode, depth, pathPrefix) {
+        const folderNames = Object.keys(treeNode.folders).sort((a, b) =>
+            a.localeCompare(b, undefined, { sensitivity: "base" })
+        );
+        for (const folderName of folderNames) {
+            const fullPath = pathPrefix ? pathPrefix + "/" + folderName : folderName;
+            const isExpanded = expanded.has(fullPath);
+            const arrow = isExpanded ? "\u25BC" : "\u25B6";
+            const item = makeItem(`${arrow}  ${folderName}`, {
+                depth,
+                color: "#999",
+            });
+            item.onclick = () => {
+                const scrollTop = menu.scrollTop;
+                if (expanded.has(fullPath)) {
+                    expanded.delete(fullPath);
+                } else {
+                    expanded.add(fullPath);
+                }
+                rebuildMenu();
+                menu.scrollTop = scrollTop;
+            };
+            container.appendChild(item);
+
+            if (isExpanded) {
+                renderTree(container, treeNode.folders[folderName], depth + 1, fullPath);
+            }
+        }
+
+        const sortedFiles = [...treeNode.files].sort((a, b) =>
+            a.localeCompare(b, undefined, { sensitivity: "base" })
+        );
+        for (const loraName of sortedFiles) {
+            const fileName = loraName.split("/").pop().replace(/\.[^.]+$/, "");
+            const selected = loraName === val.lora;
+            const item = makeItem(fileName, {
+                depth,
+                title: loraName,
+                color: selected ? "#4a9eff" : "#ddd",
+                bg: selected ? "#333" : "transparent",
+            });
+            item.onclick = () => {
+                widget.value = { ...widget.value, lora: loraName, on: loraName !== "None" };
+                node.setDirtyCanvas(true);
+                close();
+            };
+            container.appendChild(item);
+        }
+    }
+
+    function rebuildMenu() {
+        menu.innerHTML = "";
+
+        // "None" at top
+        const noneSelected = val.lora === "None";
+        const noneItem = makeItem("None", {
+            color: noneSelected ? "#4a9eff" : "#ddd",
+            bg: noneSelected ? "#333" : "transparent",
+        });
+        noneItem.onclick = () => {
+            widget.value = { ...widget.value, lora: "None", on: false };
             node.setDirtyCanvas(true);
             close();
         };
-        menu.appendChild(item);
+        menu.appendChild(noneItem);
+
+        renderTree(menu, tree, 0, "");
     }
+
+    rebuildMenu();
 
     function close() {
         menu.remove();
