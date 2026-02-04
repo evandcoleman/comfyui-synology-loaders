@@ -8,6 +8,7 @@ from .nodes import (
     SynologyMultiLoRALoader,
     SynologyVAELoader,
     SynologyControlNetLoader,
+    SynologyClearCache,
 )
 from .client import get_client, SynologyAuthError, SynologyError
 
@@ -23,6 +24,7 @@ NODE_CLASS_MAPPINGS = {
     "SynologyMultiLoRALoader": SynologyMultiLoRALoader,
     "SynologyVAELoader": SynologyVAELoader,
     "SynologyControlNetLoader": SynologyControlNetLoader,
+    "SynologyClearCache": SynologyClearCache,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -31,6 +33,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "SynologyMultiLoRALoader": "Load LoRA Multi (Synology)",
     "SynologyVAELoader": "Load VAE (Synology)",
     "SynologyControlNetLoader": "Load ControlNet (Synology)",
+    "SynologyClearCache": "Clear Cache (Synology)",
 }
 
 WEB_DIRECTORY = "./js"

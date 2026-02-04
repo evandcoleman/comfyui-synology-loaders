@@ -1,3 +1,4 @@
+import os
 import logging
 from .client import get_client, SynologyAuthError
 
@@ -259,3 +260,43 @@ class SynologyControlNetLoader:
             pbar.update_absolute(int(downloaded * 100 / total), 100)
         local_path = client.download_model("controlnet", control_net_name, progress_callback=on_progress)
         return (comfy.controlnet.load_controlnet(local_path),)
+
+# ---------------------------------------------------------------------------
+# Clear Cache
+# ---------------------------------------------------------------------------
+
+class SynologyClearCache:
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("status",)
+    FUNCTION = "clear"
+    CATEGORY = "loaders/synology"
+    OUTPUT_NODE = True
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "confirm": ("BOOLEAN", {"default": False}),
+            },
+        }
+
+    @classmethod
+    def IS_CHANGED(cls, **kwargs):
+        return float("nan")
+
+    def clear(self, confirm):
+        if not confirm:
+            client = get_client()
+            cache_dir = client.cache_dir
+            total = 0
+            if os.path.isdir(cache_dir):
+                for dirpath, _dirnames, filenames in os.walk(cache_dir):
+                    for f in filenames:
+                        total += os.path.getsize(os.path.join(dirpath, f))
+            size_mb = total / (1024 * 1024)
+            return (f"Cache: {size_mb:.1f} MB — set confirm to true to clear",)
+
+        client = get_client()
+        freed = client.clear_cache()
+        freed_mb = freed / (1024 * 1024)
+        return (f"Cleared {freed_mb:.1f} MB",)

@@ -122,6 +122,23 @@ class SynologyClient:
     def api_url(self):
         return self._api_url
 
+    @property
+    def cache_dir(self):
+        return self._cache_dir
+
+    def clear_cache(self):
+        """Delete all cached model files and return the number of bytes freed."""
+        import shutil
+        freed = 0
+        if os.path.isdir(self._cache_dir):
+            for dirpath, _dirnames, filenames in os.walk(self._cache_dir):
+                for f in filenames:
+                    freed += os.path.getsize(os.path.join(dirpath, f))
+            shutil.rmtree(self._cache_dir)
+            os.makedirs(self._cache_dir, exist_ok=True)
+            logger.info(f"Cleared cache: freed {freed / (1024 * 1024):.1f} MB")
+        return freed
+
     # -- config persistence -------------------------------------------------
 
     def _persist_config(self):
