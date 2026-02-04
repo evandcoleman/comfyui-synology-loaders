@@ -608,6 +608,7 @@ function createLoraWidget(node, index, initialValue) {
     const w = node.addWidget("combo", `lora_${index}`, "None", null, { values: loraValues });
     w.type = "lora_slot";
     w.value = val;
+    w.options.values = undefined; // prevent LiteGraph combo picker on dblclick
     w._isLoraSlot = true;
     w._lastStrengthClick = 0;
 
