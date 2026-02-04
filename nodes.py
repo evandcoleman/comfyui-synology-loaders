@@ -4,6 +4,24 @@ from .client import get_client, SynologyAuthError
 logger = logging.getLogger("comfyui-synology")
 
 # ---------------------------------------------------------------------------
+# Flexible input type helpers (for dynamic LoRA inputs)
+# ---------------------------------------------------------------------------
+
+class AnyType(str):
+    """Matches any ComfyUI type for flexible inputs."""
+    def __ne__(self, __value):
+        return False
+
+any_type = AnyType("*")
+
+class FlexibleOptionalInputType(dict):
+    """Dict that accepts any key, returning (any_type,) for unknowns."""
+    def __contains__(self, key):
+        return True
+    def __getitem__(self, key):
+        return (any_type,)
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -53,8 +71,6 @@ class SynologyCheckpointLoader:
 # LoRA Loader
 # ---------------------------------------------------------------------------
 
-MAX_LORA_SLOTS = 20
-
 class SynologyLoRALoader:
     RETURN_TYPES = ("MODEL", "CLIP")
     RETURN_NAMES = ("model", "clip")
@@ -66,20 +82,17 @@ class SynologyLoRALoader:
 
     @classmethod
     def INPUT_TYPES(cls):
-        lora_list = ["None"] + _get_model_list("loras")
-        inputs = {
+        return {
             "required": {
                 "model": ("MODEL",),
                 "clip": ("CLIP",),
             },
-            "optional": {},
+            "optional": FlexibleOptionalInputType(any_type),
         }
-        for i in range(1, MAX_LORA_SLOTS + 1):
-            inputs["optional"][f"lora_{i}"] = (lora_list,)
-            inputs["optional"][f"strength_{i}"] = ("FLOAT", {
-                "default": 1.0, "min": -20.0, "max": 20.0, "step": 0.01,
-            })
-        return inputs
+
+    @classmethod
+    def VALIDATE_INPUTS(cls, **kwargs):
+        return True
 
     @classmethod
     def IS_CHANGED(cls, **kwargs):
@@ -89,11 +102,24 @@ class SynologyLoRALoader:
         import comfy.utils
         import comfy.sd
 
-        for i in range(1, MAX_LORA_SLOTS + 1):
-            lora_name = kwargs.get(f"lora_{i}", "None")
-            strength = kwargs.get(f"strength_{i}", 1.0)
+        for key in sorted(kwargs.keys()):
+            if not key.startswith("lora_"):
+                continue
 
-            if lora_name == "None":
+            value = kwargs[key]
+
+            # Accept structured {on, lora, strength} dicts from the frontend
+            if isinstance(value, dict):
+                on = value.get("on", True)
+                lora_name = value.get("lora", "None")
+                strength = value.get("strength", 1.0)
+            else:
+                # Fallback for plain string values
+                on = True
+                lora_name = str(value)
+                strength = 1.0
+
+            if not on or lora_name == "None":
                 continue
 
             if lora_name not in self.loaded_loras:
