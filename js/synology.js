@@ -656,7 +656,11 @@ function getLoraWidgets(node) {
 
 function createLoraWidget(node, index, initialValue) {
     const val = initialValue || { on: true, lora: "None", strength: 1.0 };
-    const w = node.addWidget("combo", `lora_${index}`, val, null, { values: loraValues });
+    // Create as combo (for addWidget initialization), then change type to prevent
+    // LiteGraph's combo-specific processing from resetting our object value
+    const w = node.addWidget("combo", `lora_${index}`, "None", null, { values: loraValues });
+    w.type = "lora_slot";
+    w.value = val;
     w._isLoraSlot = true;
 
     w.draw = function (ctx, _node, width, y, H) {
@@ -708,8 +712,9 @@ function createLoraWidget(node, index, initialValue) {
     };
 
     w.mouse = function (event, pos) {
-        if (event.type === "mousedown") return true; // prevent default combo popup
-        if (event.type !== "mouseup") return false;
+        const t = event.type;
+        if (t === "pointerdown" || t === "mousedown") return true;
+        if (t !== "pointerup" && t !== "mouseup") return false;
         const x = pos[0];
         const z = loraZones(node.size[0]);
 
@@ -751,7 +756,8 @@ function createLoraWidget(node, index, initialValue) {
 }
 
 function createToggleAllWidget(node) {
-    const w = node.addWidget("combo", "toggle_all", null, null, { values: [] });
+    const w = node.addWidget("combo", "toggle_all", "", null, { values: [] });
+    w.type = "lora_toggle_all";
     w.serialize = false;
     w._isToggleAll = true;
 
@@ -778,8 +784,9 @@ function createToggleAllWidget(node) {
     };
 
     w.mouse = function (event) {
-        if (event.type === "mousedown") return true;
-        if (event.type !== "mouseup") return false;
+        const t = event.type;
+        if (t === "pointerdown" || t === "mousedown") return true;
+        if (t !== "pointerup" && t !== "mouseup") return false;
         const loraW = getLoraWidgets(node);
         const allOn = loraW.length > 0 && loraW.every(lw => lw.value.on !== false);
         const newState = !allOn;
