@@ -352,12 +352,15 @@ class SynologyClient:
                     if entry.get("isdir", False):
                         stack.append(entry["path"])
                     else:
+                        name = entry.get("name", "")
+                        if not name.lower().endswith((".safetensors", ".ckpt", ".pt", ".pth", ".bin")):
+                            continue
                         # Build path relative to the base folder
                         full = entry["path"]
                         if full.startswith(base_path + "/"):
                             relative = full[len(base_path) + 1:]
                         else:
-                            relative = entry["name"]
+                            relative = name
                         results.append(relative)
 
             self._model_cache[folder] = sorted(results)
