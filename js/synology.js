@@ -484,28 +484,23 @@ function roundRect(ctx, x, y, w, h, r) {
     }
 }
 
-function drawCheckbox(ctx, x, y, size, checked, partial) {
-    ctx.fillStyle = checked ? "#4a9eff" : partial ? "rgba(74,158,255,0.25)" : "transparent";
-    ctx.strokeStyle = checked || partial ? "#4a9eff" : "#666";
-    ctx.lineWidth = 1;
-    roundRect(ctx, x, y, size, size, [2]);
-    ctx.fill();
-    ctx.stroke();
+function drawSwitch(ctx, x, y, on, partial) {
+    const W = 22;
+    const H = 12;
+    const R = H / 2;
+    const knobR = R - 2;
 
-    if (checked || partial) {
-        ctx.strokeStyle = "#fff";
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        if (checked) {
-            ctx.moveTo(x + 3, y + size / 2);
-            ctx.lineTo(x + size / 2 - 1, y + size - 3);
-            ctx.lineTo(x + size - 3, y + 3);
-        } else {
-            ctx.moveTo(x + 3, y + size / 2);
-            ctx.lineTo(x + size - 3, y + size / 2);
-        }
-        ctx.stroke();
-    }
+    // track
+    ctx.fillStyle = on ? "#4a9eff" : partial ? "rgba(74,158,255,0.35)" : "#555";
+    roundRect(ctx, x, y, W, H, [R]);
+    ctx.fill();
+
+    // knob
+    const knobX = on || partial ? x + W - R : x + R;
+    ctx.fillStyle = "#eee";
+    ctx.beginPath();
+    ctx.arc(knobX, y + R, knobR, 0, Math.PI * 2);
+    ctx.fill();
 }
 
 function truncateText(ctx, text, maxWidth) {
@@ -520,13 +515,14 @@ function truncateText(ctx, text, maxWidth) {
 // -- Zone layout (shared across draw & mouse) ------------------------------
 
 const MARGIN = 15;
-const TOGGLE_SIZE = 12;
-const TOGGLE_PAD = 4;
+const SWITCH_W = 22;
+const SWITCH_H = 12;
+const SWITCH_PAD = 4;
 const STRENGTH_WIDTH = 50;
 
 function loraZones(width) {
-    const toggleX = MARGIN + TOGGLE_PAD;
-    const nameX = toggleX + TOGGLE_SIZE + 8;
+    const switchX = MARGIN + SWITCH_PAD;
+    const nameX = switchX + SWITCH_W + 8;
     const strengthX = width - MARGIN - STRENGTH_WIDTH;
     return {
         toggle:   { x: MARGIN, w: nameX - MARGIN },
@@ -539,8 +535,8 @@ function loraZones(width) {
 
 function drawToggleAll(ctx, node, width, y, H, slots) {
     const z = loraZones(width);
-    const toggleX = MARGIN + TOGGLE_PAD;
-    const toggleY = y + (H - TOGGLE_SIZE) / 2;
+    const switchX = MARGIN + SWITCH_PAD;
+    const switchY = y + (H - SWITCH_H) / 2;
     const allEnabled = slots.length > 0 && slots.every(s => s.enabled !== false);
     const someEnabled = slots.some(s => s.enabled !== false);
 
@@ -549,7 +545,7 @@ function drawToggleAll(ctx, node, width, y, H, slots) {
     roundRect(ctx, MARGIN, y, width - MARGIN * 2, H, [4]);
     ctx.fill();
 
-    drawCheckbox(ctx, toggleX, toggleY, TOGGLE_SIZE, allEnabled, !allEnabled && someEnabled);
+    drawSwitch(ctx, switchX, switchY, allEnabled, !allEnabled && someEnabled);
 
     ctx.fillStyle = "#888";
     ctx.font = "11px sans-serif";
@@ -560,8 +556,8 @@ function drawToggleAll(ctx, node, width, y, H, slots) {
 
 function drawLoraSlot(ctx, node, width, y, H, data) {
     const z = loraZones(width);
-    const toggleX = MARGIN + TOGGLE_PAD;
-    const toggleY = y + (H - TOGGLE_SIZE) / 2;
+    const switchX = MARGIN + SWITCH_PAD;
+    const switchY = y + (H - SWITCH_H) / 2;
     const enabled = data.enabled !== false;
 
     // background
@@ -569,7 +565,7 @@ function drawLoraSlot(ctx, node, width, y, H, data) {
     roundRect(ctx, MARGIN, y, width - MARGIN * 2, H, [4]);
     ctx.fill();
 
-    drawCheckbox(ctx, toggleX, toggleY, TOGGLE_SIZE, enabled, false);
+    drawSwitch(ctx, switchX, switchY, enabled, false);
 
     // name
     const rawName = data.lora === "None" ? "None" : data.lora.replace(/\.[^.]+$/, "");
