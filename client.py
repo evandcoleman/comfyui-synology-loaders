@@ -370,7 +370,8 @@ class SynologyClient:
 
     def download_model(self, folder, filename, progress_callback=None):
         """Download a model file from the NAS. Returns the local cache path.
-        Skips download if the file is already cached."""
+        Skips download if the file is already cached.
+        progress_callback(bytes_downloaded, total_bytes) is called during download."""
         cache_folder = os.path.join(self._cache_dir, folder)
         local_path = os.path.join(cache_folder, filename)
 
@@ -404,10 +405,11 @@ class SynologyClient:
                 self._check_response(data)
                 raise SynologyAPIError("Download returned unexpected JSON response")
 
-            os.makedirs(os.path.dirname(local_path), exist_ok=True)
-            tmp_path = local_path + ".tmp"
             total_size = int(resp.headers.get("Content-Length", 0))
             downloaded = 0
+
+            os.makedirs(os.path.dirname(local_path), exist_ok=True)
+            tmp_path = local_path + ".tmp"
             try:
                 with open(tmp_path, "wb") as f:
                     for chunk in resp.iter_content(chunk_size=8 * 1024 * 1024):

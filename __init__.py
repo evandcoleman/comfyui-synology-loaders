@@ -5,6 +5,7 @@ from aiohttp import web
 from .nodes import (
     SynologyCheckpointLoader,
     SynologyLoRALoader,
+    SynologyMultiLoRALoader,
     SynologyVAELoader,
     SynologyControlNetLoader,
 )
@@ -19,6 +20,7 @@ logger = logging.getLogger("comfyui-synology")
 NODE_CLASS_MAPPINGS = {
     "SynologyCheckpointLoader": SynologyCheckpointLoader,
     "SynologyLoRALoader": SynologyLoRALoader,
+    "SynologyMultiLoRALoader": SynologyMultiLoRALoader,
     "SynologyVAELoader": SynologyVAELoader,
     "SynologyControlNetLoader": SynologyControlNetLoader,
 }
@@ -26,6 +28,7 @@ NODE_CLASS_MAPPINGS = {
 NODE_DISPLAY_NAME_MAPPINGS = {
     "SynologyCheckpointLoader": "Load Checkpoint (Synology)",
     "SynologyLoRALoader": "Load LoRA (Synology)",
+    "SynologyMultiLoRALoader": "Load LoRA Multi (Synology)",
     "SynologyVAELoader": "Load VAE (Synology)",
     "SynologyControlNetLoader": "Load ControlNet (Synology)",
 }
