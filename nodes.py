@@ -87,7 +87,7 @@ class SynologyLoRALoader:
                 "model": ("MODEL",),
                 "clip": ("CLIP",),
             },
-            "optional": FlexibleOptionalInputType(any_type),
+            "optional": FlexibleOptionalInputType(),
         }
 
     @classmethod
