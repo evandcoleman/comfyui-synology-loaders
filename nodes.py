@@ -68,18 +68,20 @@ class SynologyLoRALoader:
         return {
             "required": {
                 "model": ("MODEL",),
-                "clip": ("CLIP",),
                 "lora_name": (_get_model_list("loras"),),
                 "strength_model": ("FLOAT", {"default": 1.0, "min": -20.0, "max": 20.0, "step": 0.01}),
                 "strength_clip": ("FLOAT", {"default": 1.0, "min": -20.0, "max": 20.0, "step": 0.01}),
-            }
+            },
+            "optional": {
+                "clip": ("CLIP",),
+            },
         }
 
     @classmethod
     def IS_CHANGED(cls, **kwargs):
         return get_client().auth_version
 
-    def load(self, model, clip, lora_name, strength_model, strength_clip):
+    def load(self, model, lora_name, strength_model, strength_clip, clip=None):
         import comfy.utils
         import comfy.sd
 
