@@ -4,6 +4,7 @@ from aiohttp import web
 
 from .nodes import (
     SynologyCheckpointLoader,
+    SynologyDiffusionModelLoader,
     SynologyLoRALoader,
     SynologyMultiLoRALoader,
     SynologyVAELoader,
@@ -20,6 +21,7 @@ logger = logging.getLogger("comfyui-synology")
 
 NODE_CLASS_MAPPINGS = {
     "SynologyCheckpointLoader": SynologyCheckpointLoader,
+    "SynologyDiffusionModelLoader": SynologyDiffusionModelLoader,
     "SynologyLoRALoader": SynologyLoRALoader,
     "SynologyMultiLoRALoader": SynologyMultiLoRALoader,
     "SynologyVAELoader": SynologyVAELoader,
@@ -29,6 +31,7 @@ NODE_CLASS_MAPPINGS = {
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     "SynologyCheckpointLoader": "Load Checkpoint (Synology)",
+    "SynologyDiffusionModelLoader": "Load Diffusion Model (Synology)",
     "SynologyLoRALoader": "Load LoRA (Synology)",
     "SynologyMultiLoRALoader": "Load LoRA Multi (Synology)",
     "SynologyVAELoader": "Load VAE (Synology)",
@@ -42,7 +45,7 @@ WEB_DIRECTORY = "./js"
 # API Routes
 # ---------------------------------------------------------------------------
 
-ALLOWED_FOLDERS = {"checkpoints", "loras", "vae", "controlnet"}
+ALLOWED_FOLDERS = {"checkpoints", "diffusion_models", "loras", "vae", "controlnet"}
 
 try:
     from server import PromptServer

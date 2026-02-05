@@ -3,6 +3,7 @@ import { app } from "../../scripts/app.js";
 // Maps node type -> folder key used by the backend
 const NODE_FOLDER_MAP = {
     SynologyCheckpointLoader: "checkpoints",
+    SynologyDiffusionModelLoader: "diffusion_models",
     SynologyLoRALoader: "loras",
     SynologyMultiLoRALoader: "loras",
     SynologyVAELoader: "vae",

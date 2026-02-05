@@ -73,6 +73,51 @@ class SynologyCheckpointLoader:
         return comfy.sd.load_checkpoint_guess_config(local_path)[:3]
 
 # ---------------------------------------------------------------------------
+# Diffusion Model Loader (UNET)
+# ---------------------------------------------------------------------------
+
+class SynologyDiffusionModelLoader:
+    RETURN_TYPES = ("MODEL",)
+    RETURN_NAMES = ("model",)
+    FUNCTION = "load"
+    CATEGORY = "loaders/synology"
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "unet_name": (_get_model_list("diffusion_models"),),
+                "weight_dtype": (["default", "fp8_e4m3fn", "fp8_e4m3fn_fast", "fp8_e5m2"],),
+            }
+        }
+
+    @classmethod
+    def IS_CHANGED(cls, **kwargs):
+        return get_client().auth_version
+
+    def load(self, unet_name, weight_dtype):
+        import torch
+        import comfy.sd
+        import comfy.utils
+
+        model_options = {}
+        if weight_dtype == "fp8_e4m3fn":
+            model_options["dtype"] = torch.float8_e4m3fn
+        elif weight_dtype == "fp8_e4m3fn_fast":
+            model_options["dtype"] = torch.float8_e4m3fn
+            model_options["fp8_optimizations"] = True
+        elif weight_dtype == "fp8_e5m2":
+            model_options["dtype"] = torch.float8_e5m2
+
+        client = get_client()
+        pbar = comfy.utils.ProgressBar(100)
+        def on_progress(downloaded, total):
+            pbar.update_absolute(int(downloaded * 100 / total), 100)
+        local_path = client.download_model("diffusion_models", unet_name, progress_callback=on_progress)
+        model = comfy.sd.load_diffusion_model(local_path, model_options=model_options)
+        return (model,)
+
+# ---------------------------------------------------------------------------
 # LoRA Loader (single)
 # ---------------------------------------------------------------------------
 
