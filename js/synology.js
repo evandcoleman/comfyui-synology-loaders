@@ -8,6 +8,10 @@ const NODE_FOLDER_MAP = {
     SynologyMultiLoRALoader: "loras",
     SynologyVAELoader: "vae",
     SynologyControlNetLoader: "controlnet",
+    SynologyCLIPLoader: "clip",
+    SynologyEmbeddingsLoader: "embeddings",
+    SynologyUpscalerLoader: "upscale_models",
+    SynologyCLIPVisionLoader: "clip_vision",
 };
 
 const SYNOLOGY_NODE_TYPES = Object.keys(NODE_FOLDER_MAP);

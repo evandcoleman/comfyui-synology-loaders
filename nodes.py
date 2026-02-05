@@ -345,3 +345,154 @@ class SynologyClearCache:
         freed = client.clear_cache()
         freed_mb = freed / (1024 * 1024)
         return (f"Cleared {freed_mb:.1f} MB",)
+
+# ---------------------------------------------------------------------------
+# CLIP Loader
+# ---------------------------------------------------------------------------
+
+class SynologyCLIPLoader:
+    RETURN_TYPES = ("CLIP",)
+    RETURN_NAMES = ("clip",)
+    FUNCTION = "load"
+    CATEGORY = "loaders/synology"
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "clip_name": (_get_model_list("clip"),),
+                "type": (["stable_diffusion", "stable_cascade", "sd3", "stable_audio", "mochi", "ltxv", "pixart", "flux", "hunyuan_video", "cosmos", "lumina2"],),
+            }
+        }
+
+    @classmethod
+    def IS_CHANGED(cls, **kwargs):
+        return get_client().auth_version
+
+    def load(self, clip_name, type):
+        import comfy.sd
+        import comfy.utils
+
+        clip_type_map = {
+            "stable_diffusion": comfy.sd.CLIPType.STABLE_DIFFUSION,
+            "stable_cascade": comfy.sd.CLIPType.STABLE_CASCADE,
+            "sd3": comfy.sd.CLIPType.SD3,
+            "stable_audio": comfy.sd.CLIPType.STABLE_AUDIO,
+            "mochi": comfy.sd.CLIPType.MOCHI,
+            "ltxv": comfy.sd.CLIPType.LTXV,
+            "pixart": comfy.sd.CLIPType.PIXART,
+            "flux": comfy.sd.CLIPType.FLUX,
+            "hunyuan_video": comfy.sd.CLIPType.HUNYUAN_VIDEO,
+            "cosmos": comfy.sd.CLIPType.COSMOS,
+            "lumina2": comfy.sd.CLIPType.LUMINA2,
+        }
+        clip_type = clip_type_map.get(type, comfy.sd.CLIPType.STABLE_DIFFUSION)
+
+        client = get_client()
+        pbar = comfy.utils.ProgressBar(100)
+        def on_progress(downloaded, total):
+            pbar.update_absolute(int(downloaded * 100 / total), 100)
+        local_path = client.download_model("clip", clip_name, progress_callback=on_progress)
+        clip = comfy.sd.load_clip(ckpt_paths=[local_path], embedding_directory=None, clip_type=clip_type)
+        return (clip,)
+
+# ---------------------------------------------------------------------------
+# Embeddings Loader
+# ---------------------------------------------------------------------------
+
+class SynologyEmbeddingsLoader:
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("embedding_path",)
+    FUNCTION = "load"
+    CATEGORY = "loaders/synology"
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "embedding_name": (_get_model_list("embeddings"),),
+            }
+        }
+
+    @classmethod
+    def IS_CHANGED(cls, **kwargs):
+        return get_client().auth_version
+
+    def load(self, embedding_name):
+        import comfy.utils
+
+        client = get_client()
+        pbar = comfy.utils.ProgressBar(100)
+        def on_progress(downloaded, total):
+            pbar.update_absolute(int(downloaded * 100 / total), 100)
+        local_path = client.download_model("embeddings", embedding_name, progress_callback=on_progress)
+        return (local_path,)
+
+# ---------------------------------------------------------------------------
+# Upscaler Loader
+# ---------------------------------------------------------------------------
+
+class SynologyUpscalerLoader:
+    RETURN_TYPES = ("UPSCALE_MODEL",)
+    RETURN_NAMES = ("upscale_model",)
+    FUNCTION = "load"
+    CATEGORY = "loaders/synology"
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "model_name": (_get_model_list("upscale_models"),),
+            }
+        }
+
+    @classmethod
+    def IS_CHANGED(cls, **kwargs):
+        return get_client().auth_version
+
+    def load(self, model_name):
+        import comfy.utils
+        from comfy_extras.chainner_models import model_loading
+
+        client = get_client()
+        pbar = comfy.utils.ProgressBar(100)
+        def on_progress(downloaded, total):
+            pbar.update_absolute(int(downloaded * 100 / total), 100)
+        local_path = client.download_model("upscale_models", model_name, progress_callback=on_progress)
+        sd = comfy.utils.load_torch_file(local_path, safe_load=True)
+        out = model_loading.load_state_dict(sd).eval()
+        return (out,)
+
+# ---------------------------------------------------------------------------
+# CLIP Vision Loader
+# ---------------------------------------------------------------------------
+
+class SynologyCLIPVisionLoader:
+    RETURN_TYPES = ("CLIP_VISION",)
+    RETURN_NAMES = ("clip_vision",)
+    FUNCTION = "load"
+    CATEGORY = "loaders/synology"
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "clip_name": (_get_model_list("clip_vision"),),
+            }
+        }
+
+    @classmethod
+    def IS_CHANGED(cls, **kwargs):
+        return get_client().auth_version
+
+    def load(self, clip_name):
+        import comfy.clip_vision
+        import comfy.utils
+
+        client = get_client()
+        pbar = comfy.utils.ProgressBar(100)
+        def on_progress(downloaded, total):
+            pbar.update_absolute(int(downloaded * 100 / total), 100)
+        local_path = client.download_model("clip_vision", clip_name, progress_callback=on_progress)
+        clip_vision = comfy.clip_vision.load(local_path)
+        return (clip_vision,)

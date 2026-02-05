@@ -10,6 +10,10 @@ from .nodes import (
     SynologyVAELoader,
     SynologyControlNetLoader,
     SynologyClearCache,
+    SynologyCLIPLoader,
+    SynologyEmbeddingsLoader,
+    SynologyUpscalerLoader,
+    SynologyCLIPVisionLoader,
 )
 from .client import get_client, SynologyAuthError, SynologyError
 
@@ -27,6 +31,10 @@ NODE_CLASS_MAPPINGS = {
     "SynologyVAELoader": SynologyVAELoader,
     "SynologyControlNetLoader": SynologyControlNetLoader,
     "SynologyClearCache": SynologyClearCache,
+    "SynologyCLIPLoader": SynologyCLIPLoader,
+    "SynologyEmbeddingsLoader": SynologyEmbeddingsLoader,
+    "SynologyUpscalerLoader": SynologyUpscalerLoader,
+    "SynologyCLIPVisionLoader": SynologyCLIPVisionLoader,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -37,6 +45,10 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "SynologyVAELoader": "Load VAE (Synology)",
     "SynologyControlNetLoader": "Load ControlNet (Synology)",
     "SynologyClearCache": "Clear Cache (Synology)",
+    "SynologyCLIPLoader": "Load CLIP (Synology)",
+    "SynologyEmbeddingsLoader": "Load Embedding (Synology)",
+    "SynologyUpscalerLoader": "Load Upscale Model (Synology)",
+    "SynologyCLIPVisionLoader": "Load CLIP Vision (Synology)",
 }
 
 WEB_DIRECTORY = "./js"
@@ -45,7 +57,7 @@ WEB_DIRECTORY = "./js"
 # API Routes
 # ---------------------------------------------------------------------------
 
-ALLOWED_FOLDERS = {"checkpoints", "diffusion_models", "loras", "vae", "controlnet"}
+ALLOWED_FOLDERS = {"checkpoints", "diffusion_models", "loras", "vae", "controlnet", "clip", "embeddings", "upscale_models", "clip_vision"}
 
 try:
     from server import PromptServer
